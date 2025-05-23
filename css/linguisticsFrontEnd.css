@@ -1,0 +1,323 @@
+/*===================================================================================*/
+
+/* Overall */
+body {
+    background-color: #EFE7DB; /* Muted Beige */
+    color: #3B3F76; /* Deep Indigo */
+    font-family: Arial, sans-serif;
+}
+
+/* Headers */
+h1 {
+    text-align: center;
+    font-size: 28px;
+    color: #3B3F76;
+}
+
+h2 {
+    color: #3B3F76;
+}
+
+/* Paragraph Styling */
+p {
+    font-size: 16px;
+    line-height: 1.6;
+    color: #3B3F76;
+}
+
+/*===================================================================================*/
+
+/* Hide all tab contents except the active one */
+.tab-content, .nested-tab-content {
+    display: none;
+}
+
+.tab-content.active, .nested-tab-content.active {
+    display: block;
+    background: white;
+    padding: 15px;
+    border: 1px solid #A7A1C2; /* Soft Indigo Gray */
+    border-radius: 8px;
+    box-shadow: 2px 2px 10px rgba(0, 0, 0, 0.1); /* Light shadow for depth */
+}
+
+/*===================================================================================*/
+
+/* Styling the main tab buttons. */
+.tabs {
+    margin-bottom: 10px; /* Space between tabs and tab content */
+}
+
+.tab-button {
+    padding: 10px 15px;
+    margin: 2px;
+    cursor: pointer;
+    border: 1px solid #A7A1C2; /* Soft Indigo Gray */
+    background-color: #6A5F99; /* Muted Deep Indigo */
+    color: #EFE7DB; /* Muted Beige */
+    font-weight: bold;
+    border-radius: 5px;
+    transition: background-color 0.3s ease;
+}
+
+.tab-button.active {
+    background-color: #3B3F76; /* Deep Indigo */
+    color: white;
+    border-color: #292D5A; /* Dark Indigo */
+}
+
+.tab-button:hover {
+    background-color: #534D85; /* Rich Indigo */
+}
+
+/*===================================================================================*/
+
+/* Styling the sub-tab buttons. */
+.nested-tabs {
+    margin-top: 10px;
+}
+
+.nested-tab-button {
+    padding: 5px 10px;
+    margin: 2px;
+    cursor: pointer;
+    border: 1px solid #A7A1C2; /* Soft Indigo Gray */
+    background-color: #D3CCC3; /* Warm Beige */
+    color: #3B3F76; /* Deep Indigo */
+    border-radius: 5px;
+    transition: background-color 0.3s ease;
+}
+
+.nested-tab-button.active {
+    background-color: #3B3F76; /* Deep Indigo */
+    color: white;
+}
+
+.nested-tab-button:hover {
+    background-color: #534D85; /* Rich Indigo */
+}
+
+/*===================================================================================*/
+
+/* Table Styling */
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 20px;
+    background: white;
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow: 2px 2px 10px rgba(0, 0, 0, 0.1); /* Soft shadow */
+}
+
+/* Table Headers */
+th {
+    background-color: #3B3F76; /* Deep Indigo */
+    color: white;
+    padding: 12px;
+    text-align: left;
+    font-size: 16px;
+    border-bottom: 2px solid #292D5A; /* Dark Indigo */
+}
+
+/* Zebra Striping */
+tr:nth-child(even) {
+    background-color: #EFE7DB; /* Muted Beige */
+}
+
+tr:nth-child(odd) {
+    background-color: #D3CCC3; /* Warm Beige */
+}
+
+/* Table Cells */
+td {
+    padding: 10px;
+    text-align: center;
+    border-bottom: 1px solid #A7A1C2; /* Soft Indigo Gray */
+}
+
+/* Table Hover Effects */
+tr:hover {
+    background-color: #B6AEC6; /* Light Indigo Gray */
+    transition: background-color 0.3s ease;
+}
+
+/* Image Styling */
+td img {
+    width: 100px; /* Adjust as needed */
+    height: auto;
+    border-radius: 5px;
+    transition: transform 0.3s ease;
+}
+
+td img:hover {
+    transform: scale(1.1);
+}
+
+/* Links */
+td a {
+    text-decoration: none;
+    display: block;
+    transition: opacity 0.3s ease;
+}
+
+td a:hover {
+    opacity: 0.8;
+}
+
+/*===================================================================================*/
+
+/* Styled Button */
+.custom-button {
+    padding: 12px 20px;
+    cursor: pointer;
+    border: 1px solid #A7A1C2; /* Soft Indigo Gray */
+    background-color: #6A5F99; /* Muted Deep Indigo */
+    color: #EFE7DB; /* Muted Beige */
+    font-weight: bold;
+    border-radius: 5px;
+    transition: background-color 0.3s ease, transform 0.2s ease;
+    font-size: 16px;
+    box-shadow: 2px 2px 5px rgba(0, 0, 0, 0.1);
+}
+
+.custom-button:hover {
+    background-color: #534D85; /* Rich Indigo */
+    transform: scale(1.05);
+}
+
+.custom-button:active {
+    background-color: #3B3F76; /* Deep Indigo */
+    border-color: #292D5A; /* Dark Indigo */
+    transform: scale(0.98);
+}
+
+/*===================================================================================*/
+
+
+/* container holds two panels side by side */
+.load-search-container {
+    display: flex;
+    gap: 2rem;
+    align-items: flex-start;
+    margin-top: 1rem;
+  }
+  
+  /* Each panel takes equal width */
+  .load-section,
+  .search-section {
+    flex: 1;
+    border: 2px solid var(--primary-color);
+    border-radius: 8px;
+    padding: 1rem;
+    background: #fff;
+  }
+  
+  /* Headings inside panels */
+  .load-section h4,
+  .search-section h4 {
+    margin-top: 0;
+    color: var(--primary-color);
+  }
+  
+  /* Style the search input */
+  #online-search-input {
+    width: 100%;
+    padding: 0.5rem;
+    margin-bottom: 1rem;
+    border: 1px solid var(--primary-color);
+    border-radius: 4px;
+  }
+  
+  /* Simple list of search results */
+  #online-search-results {
+    list-style: none;
+    padding: 0;
+    margin: 0 0 1rem 0;
+  }
+  #online-search-results li {
+    padding: 0.25rem 0;
+    border-bottom: 1px solid #eee;
+  }
+  
+
+  /* ─── TWO BOXES SIDE BY SIDE ─── */
+.load-search-container {
+    display: flex;
+    gap: 2rem;           /* space between the boxes */
+    align-items: flex-start;
+    margin-top: 1rem;
+  }
+  
+  /* Both boxes equal width but allow shrinking */
+  .load-section,
+  .search-section {
+    flex: 1 1 0;
+    min-width: 0;        /* lets flex items shrink below content width */
+    border: 2px solid #3B3F76; /* match your theme’s Indigo */
+    border-radius: 8px;
+    padding: 1rem;
+    background: #fff;
+  }
+  
+  /* Titles inside each box */
+  .load-section h4,
+  .search-section h4 {
+    margin-top: 0;
+    margin-bottom: 0.5rem;
+    color: #3B3F76;
+  }
+  
+  /* Style the file input and search input uniformly */
+  .load-section input[type="file"],
+  .search-section input[type="text"] {
+    display: block;
+    width: 100%;
+    padding: 0.5rem;
+    margin-bottom: 1rem;
+    border: 1px solid #A7A1C2;
+    border-radius: 4px;
+  }
+  
+  /* Search results list */
+  #online-search-results {
+    list-style: none;
+    padding: 0;
+    margin: 0 0 1rem;
+    max-height: 150px;
+    overflow-y: auto;
+  }
+  #online-search-results li {
+    padding: 0.25rem 0;
+    border-bottom: 1px solid #eee;
+  }
+  
+  /* ─── Wizard Layout ─── */
+.progress-container {
+    width: 100%;
+    background: #D3CCC3;
+    height: 8px;
+    border-radius: 4px;
+    margin-bottom: 1rem;
+  }
+  .progress-bar {
+    width: 0%;
+    height: 100%;
+    background: #3B3F76;
+    border-radius: 4px;
+    transition: width 0.3s ease;
+  }
+  
+  .step {
+    display: none;
+  }
+  .step.active {
+    display: block;
+  }
+  
+  .wizard-buttons {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 1rem;
+  }
+  
