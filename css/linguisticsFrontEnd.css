@@ -1,323 +1,323 @@
-/*===================================================================================*/
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap');
 
-/* Overall */
-body {
-    background-color: #EFE7DB; /* Muted Beige */
-    color: #3B3F76; /* Deep Indigo */
-    font-family: Arial, sans-serif;
+
+:root {
+    /* Page & Card Backgrounds */
+    --color-bg: #F7F8FA;        /* Light grey page background */
+    --color-card: #FFFFFF;      /* Pure white card background */
+
+    /* Borders & Accents */
+    --color-accent: #E5E7EB;    /* Light grey borders */
+    --color-hover: #D1D5DB;     /* Slightly darker grey for hover states */
+
+    /* Text & Primary Actions */
+    --color-primary: #1F2937;   /* Dark grey text */
+    --color-secondary: #6B7280; /* Medium grey text */
+    --color-dark: #111827;      /* Almost black for active states */
+
+    --shadow-light: rgba(0, 0, 0, 0.05);
 }
 
-/* Headers */
+/*===================================================================================*/
+
+/* Overall Typography & Base */
+body {
+    background-color: var(--color-bg);
+    color: var(--color-primary);
+    font-family: 'Inter', system-ui, sans-serif;
+}
+
+h1, h2, p, .load-section h4, .search-section h4 {
+    color: var(--color-primary);
+}
+
 h1 {
     text-align: center;
     font-size: 28px;
-    color: #3B3F76;
 }
 
-h2 {
-    color: #3B3F76;
-}
-
-/* Paragraph Styling */
 p {
     font-size: 16px;
     line-height: 1.6;
-    color: #3B3F76;
 }
 
 /*===================================================================================*/
 
-/* Hide all tab contents except the active one */
-.tab-content, .nested-tab-content {
+/* Tabs & Nested Tabs */
+.tab-content,
+.nested-tab-content {
     display: none;
 }
 
-.tab-content.active, .nested-tab-content.active {
+.tab-content.active,
+.nested-tab-content.active {
     display: block;
-    background: white;
+    background: #fff;
     padding: 15px;
-    border: 1px solid #A7A1C2; /* Soft Indigo Gray */
+    border: 1px solid var(--color-accent);
     border-radius: 8px;
-    box-shadow: 2px 2px 10px rgba(0, 0, 0, 0.1); /* Light shadow for depth */
+    box-shadow: 2px 2px 10px var(--shadow-light);
 }
 
 /*===================================================================================*/
 
-/* Styling the main tab buttons. */
-.tabs {
-    margin-bottom: 10px; /* Space between tabs and tab content */
+/* Buttons: Shared Styles */
+.tab-button,
+.nested-tab-button,
+.custom-button {
+    cursor: pointer;
+    border-radius: 5px;
+    border: 1px solid var(--color-accent);
+    transition: background-color 0.3s ease;
 }
 
 .tab-button {
-    padding: 10px 15px;
-    margin: 2px;
-    cursor: pointer;
-    border: 1px solid #A7A1C2; /* Soft Indigo Gray */
-    background-color: #6A5F99; /* Muted Deep Indigo */
-    color: #EFE7DB; /* Muted Beige */
-    font-weight: bold;
-    border-radius: 5px;
-    transition: background-color 0.3s ease;
+    /* tighter padding for pill shape */
+    padding: 8px 16px;
+    /* horizontal spacing only on the right */
+    margin-right: 8px;
+    background-color: var(--color-bg);
+    color: var(--color-primary);             /* dark grey text */
+    font-weight: 500;
+    border: none;                            /* remove default border */
+    border-radius: 8px;                    /* full pill rounding */
+    transition: background-color 0.2s ease;
+}
+
+
+.tab-button:hover {
+    background-color: var(--color-hover);
 }
 
 .tab-button.active {
-    background-color: #3B3F76; /* Deep Indigo */
-    color: white;
-    border-color: #292D5A; /* Dark Indigo */
+    background-color: var(--color-hover);    /* slightly darker grey */
 }
 
-.tab-button:hover {
-    background-color: #534D85; /* Rich Indigo */
-}
 
-/*===================================================================================*/
 
-/* Styling the sub-tab buttons. */
-.nested-tabs {
-    margin-top: 10px;
-}
-
+/* Nested Tabs */
 .nested-tab-button {
     padding: 5px 10px;
     margin: 2px;
-    cursor: pointer;
-    border: 1px solid #A7A1C2; /* Soft Indigo Gray */
-    background-color: #D3CCC3; /* Warm Beige */
-    color: #3B3F76; /* Deep Indigo */
-    border-radius: 5px;
-    transition: background-color 0.3s ease;
-}
-
-.nested-tab-button.active {
-    background-color: #3B3F76; /* Deep Indigo */
-    color: white;
+    background-color: #D3CCC3;
+    color: var(--color-primary);
 }
 
 .nested-tab-button:hover {
-    background-color: #534D85; /* Rich Indigo */
+    background-color: var(--color-hover);
 }
 
-/*===================================================================================*/
-
-/* Table Styling */
-table {
-    width: 100%;
-    border-collapse: collapse;
-    margin-top: 20px;
-    background: white;
-    border-radius: 8px;
-    overflow: hidden;
-    box-shadow: 2px 2px 10px rgba(0, 0, 0, 0.1); /* Soft shadow */
+.nested-tab-button.active {
+    background-color: var(--color-primary);
+    color: #fff;
 }
 
-/* Table Headers */
-th {
-    background-color: #3B3F76; /* Deep Indigo */
-    color: white;
-    padding: 12px;
-    text-align: left;
-    font-size: 16px;
-    border-bottom: 2px solid #292D5A; /* Dark Indigo */
-}
-
-/* Zebra Striping */
-tr:nth-child(even) {
-    background-color: #EFE7DB; /* Muted Beige */
-}
-
-tr:nth-child(odd) {
-    background-color: #D3CCC3; /* Warm Beige */
-}
-
-/* Table Cells */
-td {
-    padding: 10px;
-    text-align: center;
-    border-bottom: 1px solid #A7A1C2; /* Soft Indigo Gray */
-}
-
-/* Table Hover Effects */
-tr:hover {
-    background-color: #B6AEC6; /* Light Indigo Gray */
-    transition: background-color 0.3s ease;
-}
-
-/* Image Styling */
-td img {
-    width: 100px; /* Adjust as needed */
-    height: auto;
-    border-radius: 5px;
-    transition: transform 0.3s ease;
-}
-
-td img:hover {
-    transform: scale(1.1);
-}
-
-/* Links */
-td a {
-    text-decoration: none;
-    display: block;
-    transition: opacity 0.3s ease;
-}
-
-td a:hover {
-    opacity: 0.8;
-}
-
-/*===================================================================================*/
-
-/* Styled Button */
+/* Styled Buttons */
 .custom-button {
-    padding: 12px 20px;
-    cursor: pointer;
-    border: 1px solid #A7A1C2; /* Soft Indigo Gray */
-    background-color: #6A5F99; /* Muted Deep Indigo */
-    color: #EFE7DB; /* Muted Beige */
-    font-weight: bold;
-    border-radius: 5px;
-    transition: background-color 0.3s ease, transform 0.2s ease;
-    font-size: 16px;
-    box-shadow: 2px 2px 5px rgba(0, 0, 0, 0.1);
+  padding: 12px 20px;
+  /* match your active‐pill color */
+  background-color: var(--color-dark);
+  border-color:  var(--color-dark);
+  color:             var(--color-card);
+  font-weight:       bold;
+  /* keep the rest the same */
 }
+
 
 .custom-button:hover {
-    background-color: #534D85; /* Rich Indigo */
+    background-color: var(--color-hover);
     transform: scale(1.05);
 }
 
 .custom-button:active {
-    background-color: #3B3F76; /* Deep Indigo */
-    border-color: #292D5A; /* Dark Indigo */
+    background-color: var(--color-primary);
+    border-color: var(--color-dark);
     transform: scale(0.98);
 }
 
 /*===================================================================================*/
 
-
-/* container holds two panels side by side */
+/* Panels Side by Side */
 .load-search-container {
     display: flex;
     gap: 2rem;
     align-items: flex-start;
     margin-top: 1rem;
-  }
-  
-  /* Each panel takes equal width */
-  .load-section,
-  .search-section {
-    flex: 1;
-    border: 2px solid var(--primary-color);
-    border-radius: 8px;
-    padding: 1rem;
-    background: #fff;
-  }
-  
-  /* Headings inside panels */
-  .load-section h4,
-  .search-section h4 {
-    margin-top: 0;
-    color: var(--primary-color);
-  }
-  
-  /* Style the search input */
-  #online-search-input {
-    width: 100%;
-    padding: 0.5rem;
-    margin-bottom: 1rem;
-    border: 1px solid var(--primary-color);
-    border-radius: 4px;
-  }
-  
-  /* Simple list of search results */
-  #online-search-results {
-    list-style: none;
-    padding: 0;
-    margin: 0 0 1rem 0;
-  }
-  #online-search-results li {
-    padding: 0.25rem 0;
-    border-bottom: 1px solid #eee;
-  }
-  
+}
 
-  /* ─── TWO BOXES SIDE BY SIDE ─── */
-.load-search-container {
-    display: flex;
-    gap: 2rem;           /* space between the boxes */
-    align-items: flex-start;
-    margin-top: 1rem;
-  }
-  
-  /* Both boxes equal width but allow shrinking */
-  .load-section,
-  .search-section {
+.load-section, .search-section {
     flex: 1 1 0;
-    min-width: 0;        /* lets flex items shrink below content width */
-    border: 2px solid #3B3F76; /* match your theme’s Indigo */
+    min-width: 0;
+    border: 2px solid var(--color-primary);
     border-radius: 8px;
     padding: 1rem;
     background: #fff;
-  }
-  
-  /* Titles inside each box */
-  .load-section h4,
-  .search-section h4 {
-    margin-top: 0;
-    margin-bottom: 0.5rem;
-    color: #3B3F76;
-  }
-  
-  /* Style the file input and search input uniformly */
-  .load-section input[type="file"],
-  .search-section input[type="text"] {
+}
+
+/* Unified Input Styles */
+.load-section input[type="file"],
+.search-section input[type="text"],
+#online-search-input {
     display: block;
     width: 100%;
     padding: 0.5rem;
     margin-bottom: 1rem;
-    border: 1px solid #A7A1C2;
+    border: 1px solid var(--color-accent);
     border-radius: 4px;
-  }
-  
-  /* Search results list */
-  #online-search-results {
+}
+
+#online-search-results {
     list-style: none;
     padding: 0;
     margin: 0 0 1rem;
     max-height: 150px;
     overflow-y: auto;
-  }
-  #online-search-results li {
+}
+
+#online-search-results li {
     padding: 0.25rem 0;
     border-bottom: 1px solid #eee;
-  }
-  
-  /* ─── Wizard Layout ─── */
+}
+
+/*===================================================================================*/
+
+/* Tables */
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 1rem;
+    background: var(--color-card);
+    border: 1px solid var(--color-accent);
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+thead {
+    background: var(--color-card);
+}
+
+thead th {
+    padding: 0.75rem 1rem;
+    font-weight: 600;
+    color: var(--color-primary);
+    text-align: left;
+    border-bottom: 1px solid var(--color-accent);
+}
+
+tbody tr {
+    border-bottom: 1px solid var(--color-accent);
+    transition: background-color 0.2s ease;
+}
+
+tbody tr:last-child {
+    border-bottom: none;
+}
+
+tbody tr:hover {
+    background: var(--color-hover);
+}
+
+td {
+    padding: 0.75rem 1rem;
+    color: var(--color-secondary);
+    text-align: left;
+}
+
+td img {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    object-fit: cover;
+    margin-right: -8px;
+    border: 2px solid var(--color-card);
+    vertical-align: middle;
+}/* Wizard */
 .progress-container {
     width: 100%;
     background: #D3CCC3;
     height: 8px;
     border-radius: 4px;
     margin-bottom: 1rem;
-  }
-  .progress-bar {
+}
+
+.progress-bar {
     width: 0%;
     height: 100%;
-    background: #3B3F76;
+    background: var(--color-primary);
     border-radius: 4px;
     transition: width 0.3s ease;
-  }
-  
-  .step {
+}
+
+.step {
     display: none;
-  }
-  .step.active {
+}
+
+.step.active {
     display: block;
-  }
-  
-  .wizard-buttons {
+}
+
+.wizard-buttons {
     display: flex;
     justify-content: space-between;
     margin-top: 1rem;
-  }
-  
+}
+
+/* Example Bars */
+.example-bar {
+    padding: 0.5rem 1rem;
+    margin: 0.25rem 0;
+    background-color: var(--color-secondary);
+    color: var(--color-bg);
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background-color 0.2s;
+}
+
+.example-bar:hover {
+    background-color: var(--color-hover);
+}
+
+
+/* Specific fix: shrink first column only in subtabC */
+#subtabC table {
+    table-layout: fixed;
+}
+
+#subtabC table th:first-child,
+#subtabC table td:first-child {
+    width: 80px;
+    white-space: nowrap;
+}
+
+
+
+
+
+
+
+/* space below “Log Out” button */
+#logout-btn {
+  margin-bottom: 16px;
+}
+
+.tabs {
+  display: flex;
+  justify-content: center;
+  gap: 8px;          /* optional spacing between pills */
+  margin-bottom: 16px;
+}
+
+
+/* space below the nested pill tabs before their content */
+.nested-tabs {
+  margin-bottom: 16px;
+}
+
+
+/* Narrow the filter boxes in subtabB & subtabD */
+#subtabB > input[type="text"],
+#subtabD > input[type="text"] {
+  width: 300px !important;
+}
+
+
