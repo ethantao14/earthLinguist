@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+
+<!-- General Info -->
+<html lang="en">
+
+	<head>
+
+		<!-- General Info -->
+		<meta charset="utf-8">
+
+    	<!-- Tab Title -->
+    	<title>EarthLinguist App</title>
+    	
+    	<!-- General Info -->
+    	<meta name="author" content="Ethan Tao">
+		<meta name="description" content="An app to allow people to teach/learn languages in an interesting way.">
+    	
+		<!-- Linking Supabase JS Library, CSS, JS -->
+		<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    	<link href="css/linguisticsFrontEnd.css" rel="stylesheet" type="text/css">
+    	<script type="text/javascript" src="js/linguisticsFrontEnd.js" defer></script>
+
+	</head>
+
+	<body>
+		<!-- Login & Sign-up Forms -->
+		<div class="auth-wrapper">
+			<div class="auth-toggle" style="display:flex; gap:8px; margin-bottom:16px;">
+				<button id="login-page-btn" class="auth-toggle-button active">Log In</button>
+				<button id="signup-page-btn" class="auth-toggle-button">Sign Up</button>
+			</div>
+
+			<!-- Log in form -->
+			<div id="login-page" class="auth-page">
+				<input id="identifier" type="text" placeholder="Username or email" />
+				<input id="password" type="password" placeholder="Password" />
+				<button id="login-btn" class="custom-button">Log In</button>
+				<div id="auth-message"></div>
+			</div>
+
+			<!-- Sign up form -->
+			<div id="signup-page" class="auth-page" style="display:none;">
+				<input id="first-name" type="text" placeholder="First name" />
+				<input id="last-name" type="text" placeholder="Last name" />
+				<input id="username-signup" type="text" placeholder="Username" />
+				<input id="email-signup" type="text" placeholder="Email" />
+				<input id="password-signup" type="password" placeholder="Password" />
+				<button id="signup-btn" class="custom-button">Sign Up</button>
+				<div id="auth-message-signup"></div>
+			</div>
+		</div>
+
+
+  		<!-- App UI -->
+  		<div id="app-section" style="display:none;">
+
+			<!-- Title/Greeting -->
+			<h1>EarthLinguist App</h1>
+			<p>Welcome, <span id="welcome-name"></span>!</p>
+			
+			<!-- Logout Button -->
+			<button id="logout-btn" class="custom-button">Log Out</button>
+
+			<!-- Navigation Buttons -->
+			<div class="tabs">
+				<button class="tab-button active" id="tab1-btn">Introduction</button>
+				<button class="tab-button" id="tab2-btn">Listen</button>
+				<button class="tab-button" id="tab3-btn">Record</button>
+			</div>
+
+			<!-- Tab 1 Content: Introduction Message -->
+			<div id="tab1" class="tab-content active">
+				<h2>Welcome to the EarthLinguist App</h2>
+				<p>
+					&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Our goal is to build a library of sounds clips recorded by users suitable for listening or doing 
+					linguistics research. The sound clips are recorded in various languages to describe pictures in a table, in a structured way. We don't tell you how to 
+					describe the pictures; rather, you describe them in your own language, and others can listen to how you describe them and try to figure out features of your 
+					language.
+					<br><br>
+					&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Your recordings can be very useful to linguists who are trying to describe features of pronunciation, word 
+					usage, and phraseology in your language, so this is for a good cause! So THANK YOU in advance for participating!
+					<br><br>
+					&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;By submitting audio or other information to this application, you acknowledge and agree that all such 
+					submissions become the sole property of Professor Werner. Submitted content may be used, modified, stored, published, or shared at the discretion of the 
+					website owner. Do not submit anything you expect to remain private or retain ownership of.
+				</p>
+			</div>
+
+			<!-- Tab 2 Content: Viewing Features -->
+			<div id="tab2" class="tab-content">
+
+				<!-- Title and Instructions -->
+				<h2>Load Recording</h2>
+				<p>To load a sample recording from your hard drive to edit or listen, select it here:</p>
+
+				<!-- Tab 2 Navigation Buttons -->
+				<div class="nested-tabs">
+					<button class="nested-tab-button active" id="subtabA-btn">Load Clips</button>
+					<button class="nested-tab-button" id="subtabB-btn">Listen To Clips</button>
+					<button class="nested-tab-button" id="subtabC-btn">Read Transcriptions and Annotations</button>
+				</div>
+
+				<!-- Subtab 2A Content: Will Let Users View Local Examples (Yet To Be Implemented) -->
+				<div id="subtabA" class="nested-tab-content active">
+					<h1>IN CONSTRUCTION!</h1>
+				</div>
+				
+				<!-- Subtab 2B Content: Allows Users To Click An Example And See It -->
+				<div id="subtabB" class="nested-tab-content">
+
+					<!-- Title -->
+					<h3>Table</h3>
+
+						<!-- Filters: Choose By Language Or Example Title -->
+						<input type="text" id="language-search-input" placeholder="Type a language… e.g. Icelandic" style="margin-bottom:1rem; padding:0.5rem; width:100%;"/>
+						<input type="text" id="label-search-input" placeholder="Type a label… e.g. Example 1: Chair Example" style="margin-bottom:0.5rem; padding:0.5rem; width:100%;"/>
+
+						<!-- Table That Shows The Selected Example -->
+						<table id="image-table">
+							<thead>
+								<tr><th>Image</th></tr>
+							</thead>
+
+							<tbody>
+							</tbody>
+						</table>
+
+						<!-- Table That Shows Examples To Choose From -->
+						<h3>Examples</h3>
+						<table id="examples-table">
+							<thead>
+								<tr>
+									<th>Label</th>
+									<th>Language</th>
+									<th>User</th>
+								</tr>
+							</thead>
+
+							<tbody>
+							</tbody>
+						</table>
+				</div>
+
+				<!-- Subtab 2C Content: Allows Users To View Transcriptions Of Example Selected In Subtab 2B -->
+				<div id="subtabC" class="nested-tab-content">
+				</div>
+
+			</div>
+						
+			<!-- Tab 3 Content: Allows Users To Submit Their Own Examples To Be Approved By Admins -->
+			<div id="tab3" class="tab-content">
+
+				<!-- Title -->
+				<h2>Record Clips</h2>
+
+				<!-- Class With Everything Related To The 3-Step Process -->
+				<div class="wizard">
+					
+					<!-- Progress Bar -->
+					<div class="progress-container">
+
+						<!-- Filled Section Of Bar -->
+						<div id="progress-bar" class="progress-bar"></div>
+					</div>
+					
+					<!-- The 3 Steps In Order To Create An Example -->
+
+					<!-- Step 1: Basic Information -->
+					<div id="step-1" class="step active">
+
+						<!-- Information About The Example Being Created: Language And Location -->
+						<h3>Step 1: Details</h3>
+						<input type="text" id="record-language" placeholder="Type a language…" style="margin-bottom:0.5rem; padding:0.5rem; width:100%;"/>
+						<input type="text" id="record-location" placeholder="Type a location…" style="margin-bottom:0.5rem; padding:0.5rem; width:100%;"/>
+					</div>
+					
+					<!-- Step 2: Selecting Example And Recording Audios -->
+					<div id="step-2" class="step">
+						<h3>Step 2: Record</h3>
+						<h3>Table</h3>
+
+							<!-- Filter To Select Example By Language Or Title -->
+							<input type="text" id="language-search-input-d" placeholder="Type a language…" style="margin-bottom:1rem; padding:0.5rem; width:100%;"/>
+							<input type="text" id="label-search-input-d" placeholder="Type a label…" style="margin-bottom:0.5rem; padding:0.5rem; width:100%;"/>
+
+							<!-- Table That Shows Selected Example -->
+							<table id="image-table-d">
+								<thead>
+									<tr>
+										<th>Image</th>
+									</tr>
+								</thead>
+
+								<tbody>
+								</tbody>
+							</table>
+
+							<!-- Table That Shows Examples To Choose From -->
+							<h3>Examples</h3>
+							<table id="examples-table-d">
+								<thead>
+								<tr>
+									<th>Label</th>
+								</tr>
+								</thead>
+
+								<tbody>
+								</tbody>
+							</table>
+					</div>
+					
+					<!-- Step 3: Allows Users To Type Transcriptions For The Recorded Audios -->
+					<div id="step-3" class="step">
+						<h3>Step 3: Transcriptions</h3>
+					</div>
+					
+					<!-- Buttons To Navigate Between Steps -->
+					<div class="wizard-buttons">
+						<button id="prev-btn" class="custom-button">Previous</button>
+						<button id="next-btn" class="custom-button">Next</button>
+						<button id="submit-recordings-btn" class="custom-button" style="display:none">Submit</button>
+					</div>
+					
+					<!-- Message To Indicate Submissions Status -->
+					<p id="submit-status"></p>
+				</div>
+			</div>
+		</div>
+	</body>
+</html>
