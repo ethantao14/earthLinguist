@@ -168,6 +168,7 @@ document.getElementById('logout-btn').addEventListener('click', async () => {
 });
 
 async function checkLoginStatus() {
+  if (DEMO_MODE) return; // never run auth in demo
   const { data: sessionData } = await supabaseClient.auth.getSession();
   const session = sessionData?.session;
   if (!session) return;
@@ -186,6 +187,9 @@ async function checkLoginStatus() {
   const authWrapper = document.querySelector('.auth-wrapper'); // the actual container in your HTML
   if (authWrapper) authWrapper.style.display = 'none';
   document.getElementById('app-section').style.display = 'block';
+
+  // init wizard for real app
+  showStep(1);
 
 
   // ✅ DOM elements now exist. Safe to add event listeners.
@@ -264,12 +268,11 @@ function bootDemo() {
 
 
 
-
-window.addEventListener('load', () => {
+document.addEventListener('DOMContentLoaded', () => {
   if (DEMO_MODE) {
-    bootDemo();
+    bootDemo();                  // show app immediately, hide auth
   } else {
-    checkLoginStatus();
+    checkLoginStatus();          // normal auth path
   }
 });
 
@@ -288,10 +291,6 @@ const labelInputD = document.getElementById('label-search-input-d');
 // 3) Re-fetch when D’s filters change
 labelInputD.addEventListener('input', fetchAndRenderTableD);
 langInputD.addEventListener('input',  fetchAndRenderTableD);
-
-// still seed subtab B as before:
-fetchAndRenderTable();
-fetchAndRenderExamplesTable();
 
 
 
@@ -817,10 +816,6 @@ function renderRecordTranscriptionsTable(clips) {
 
 
 
-window.onload = function() {
-    fetchAndRenderExamplesTable();
-};
-
 
 
 // Function to switch tabs
@@ -950,11 +945,6 @@ document.getElementById('next-btn').addEventListener('click', () => {
     // final step “Finish” action
     alert('All done!');
   }
-});
-
-// initialize on load
-window.addEventListener('load', () => {
-  showStep(currentStep);
 });
 
 
