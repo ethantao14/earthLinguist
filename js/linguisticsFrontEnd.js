@@ -22,9 +22,9 @@ const supabaseClient  = createClient(SUPABASE_URL, SUPABASE_ANON_KEY); //Created
 
 //Demo version for recruiters
 //Uses either ?demo=1 or #demo in the URL
-const DEMO_MODE =
-  new URLSearchParams(location.search).get('demo') === '1' ||
-  location.hash.toLowerCase().includes('demo');
+const sp = new URLSearchParams(location.search);
+const DEMO_MODE = sp.has('demo') || location.hash.toLowerCase().includes('demo');
+
 
 //Toggle between login and signup: change active button and which page is visible
 document.getElementById('login-page-btn').addEventListener('click', () => {
