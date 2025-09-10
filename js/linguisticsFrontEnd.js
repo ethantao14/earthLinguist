@@ -20,6 +20,12 @@ const SUPABASE_URL    = 'https://wqmcsvamrfaxcbcvbyxv.supabase.co'; //Project's 
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndxbWNzdmFtcmZheGNiY3ZieXh2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDY4MTExMDAsImV4cCI6MjA2MjM4NzEwMH0.mQNXXwbn9baTQBQBn84f7ytvD2aYjk6bdnJTdc0wHrY';
 const supabaseClient  = createClient(SUPABASE_URL, SUPABASE_ANON_KEY); //Created supabase Client using previous 3 const's
 
+//Demo version for recruiters
+//Uses either ?demo=1 or #demo in the URL
+const DEMO_MODE =
+  new URLSearchParams(location.search).get('demo') === '1' ||
+  location.hash.toLowerCase().includes('demo');
+
 //Toggle between login and signup: change active button and which page is visible
 document.getElementById('login-page-btn').addEventListener('click', () => {
   document.getElementById('login-page').style.display = 'block';
@@ -227,10 +233,46 @@ async function checkLoginStatus() {
   fetchAndRenderExamplesTable();
 }
 
+function bootDemo() {
+  // Hide auth UI, show app
+  const authWrapper = document.querySelector('.auth-wrapper');
+  if (authWrapper) authWrapper.style.display = 'none';
+  const app = document.getElementById('app-section');
+  if (app) app.style.display = 'block';
+
+  // Anonymous greeting, hide logout
+  const nameSpan = document.getElementById('welcome-name');
+  if (nameSpan) nameSpan.textContent = 'Anonymous';
+  const logoutBtn = document.getElementById('logout-btn');
+  if (logoutBtn) logoutBtn.style.display = 'none';
+
+  // Wire tabs (these were wired inside checkLoginStatus for the real app)
+  document.getElementById("tab1-btn").addEventListener("click", function() { openTab("tab1", this); });
+  document.getElementById("tab2-btn").addEventListener("click", function() { openTab("tab2", this); });
+  document.getElementById("tab3-btn").addEventListener("click", function() { openTab("tab3", this); });
+  document.getElementById("subtabA-btn").addEventListener("click", function() { openNestedTab("subtabA", this, "tab2"); });
+  document.getElementById("subtabB-btn").addEventListener("click", function() { openNestedTab("subtabB", this, "tab2"); });
+  document.getElementById("subtabC-btn").addEventListener("click", function() { openNestedTab("subtabC", this, "tab2"); });
+
+  // Read-only data loads (requires your Supabase RLS to allow anonymous SELECT)
+  fetchAndRenderTable();
+  fetchAndRenderExamplesTable();
+
+  // Make sure the wizard renders
+  showStep(1);
+}
+
+
+
 
 window.addEventListener('load', () => {
-  checkLoginStatus();
+  if (DEMO_MODE) {
+    bootDemo();
+  } else {
+    checkLoginStatus();
+  }
 });
+
 
 
 
@@ -924,6 +966,13 @@ document
   .getElementById('submit-recordings-btn')
   .addEventListener('click', async () => {
     const status = document.getElementById('submit-status');
+
+    // Demo: block writes
+    if (DEMO_MODE) {
+      status.textContent = 'To submit, move to non-demo version linked on resume.';
+      return;
+    }
+
     status.textContent = 'Uploading…';
     
 
