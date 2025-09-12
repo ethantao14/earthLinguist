@@ -119,35 +119,39 @@ document.getElementById('login-btn').addEventListener('click', async () => {
     const { data: prof, error: profErr } = await supabaseClient
       .from('profiles')
       .select('email')
-      .ilike('username', identifier)  // case-insensitive match
+      .ilike('username', identifier)
       .maybeSingle();
 
+    //Error query failed or could not find username, show user a message and end function
     if (profErr || !prof?.email) {
       msg.textContent = 'Invalid login credentials.';
       return;
     }
+
+    //converts the username to email for log-in
     emailToUse = prof.email;
   }
-
-
-
   
+  //tries to use supabase sign in using email and password and uses object destructuring to get error
   const { error } = await supabaseClient.auth.signInWithPassword({
     email: emailToUse,
     password
   });
 
+  //if there is an error, throws generic error and shows an error message to user
   if (error) {
     console.error('Login failed:', error);
-    // keep message generic to avoid username/email enumeration
     msg.textContent = 'Invalid login credentials.';
     return;
   }
 
+  //clear out error message since no errors
   msg.textContent = '';
-  await checkLoginStatus(); // reveal app
 
-  // clear sign-up fields (unchanged)
+  //if successfully logged in, shifts from sign up/login UI to actual app
+  await checkLoginStatus();
+
+  //reset sign-up fields
   document.getElementById('first-name').value = '';
   document.getElementById('last-name').value = '';
   document.getElementById('email-signup').value = '';
@@ -156,75 +160,66 @@ document.getElementById('login-btn').addEventListener('click', async () => {
   document.getElementById('username-signup').value = '';
 });
 
-
-
-
-
-
-// Log-out
+//If logout button clicked, supabase logs out user
 document.getElementById('logout-btn').addEventListener('click', async () => {
   await supabaseClient.auth.signOut();
+  //reset page
   location.reload();
 });
 
+//shifts from login/signup UI to actual app if a successful login occurs
 async function checkLoginStatus() {
-  if (DEMO_MODE) return; // never run auth in demo
+  //safeguard in case called in demo
+  if (DEMO_MODE) return;
+
+  //gets the data from the object that getSession() returns through object destructuring. If the session in the data is null, the user is not logged in
   const { data: sessionData } = await supabaseClient.auth.getSession();
   const session = sessionData?.session;
   if (!session) return;
 
+  //stores user ID in local and global variable for later use
   const userId = session.user.id;
-
   currentUserId = userId;
 
+  //gets fname and lname from the given user's profile as a single object
   const { data: profileData } = await supabaseClient
     .from('profiles')
     .select('first_name, last_name')
     .eq('id', userId)
     .single();
 
-  // Show/hide sections
-  const authWrapper = document.querySelector('.auth-wrapper'); // the actual container in your HTML
+  //checks if there is an element in auth-wrapper (safety check). If there is, they are made not visible.
+  const authWrapper = document.querySelector('.auth-wrapper');
   if (authWrapper) authWrapper.style.display = 'none';
+
+  //app is now visible
   document.getElementById('app-section').style.display = 'block';
 
-  // init wizard for real app
+  //starts the wizard process on tab 3 on step 1
   showStep(1);
 
 
-  // ✅ DOM elements now exist. Safe to add event listeners.
+  //when a tab button is clicked, the openTab function is called to switch tabs accordingly
   document.getElementById("tab1-btn").addEventListener("click", function() {
     openTab("tab1", this);
   });
-
   document.getElementById("tab2-btn").addEventListener("click", function() {
     openTab("tab2", this);
   });
-
   document.getElementById("tab3-btn").addEventListener("click", function() {
     openTab("tab3", this);
   });
-
   document.getElementById("subtabA-btn").addEventListener("click", function() {
     openNestedTab("subtabA", this, "tab2");
   });
-
   document.getElementById("subtabB-btn").addEventListener("click", function() {
     openNestedTab("subtabB", this, "tab2");
   });
-
   document.getElementById("subtabC-btn").addEventListener("click", function() {
     openNestedTab("subtabC", this, "tab2");
-    
   });
 
-
-
-
-
-
-
-  // Update UI with name
+  // Updating UI with name. If profile data exists, it sets the welcome message text to include first and last name. If not, the email is used instead (ternary operator)
   const nameSpan = document.getElementById('welcome-name');
   if (nameSpan) {
     nameSpan.textContent = profileData
@@ -232,17 +227,23 @@ async function checkLoginStatus() {
       : session.user.email;
   }
 
-  // Fetch tables
+  // Fetch tables for tab 2 subtab 2. The transcriptions table for tab 2 subtab 3 is also constructed via a function call inside of fetchAndRenderTable()
   fetchAndRenderTable();
   fetchAndRenderExamplesTable();
 }
 
 function bootDemo() {
-  // Hide auth UI, show app
+  //checks if there is an element in auth-wrapper (safety check). If there is, they are made not visible.
   const authWrapper = document.querySelector('.auth-wrapper');
   if (authWrapper) authWrapper.style.display = 'none';
+
+  //checks if there is an element in app-section (safety check). If there is, they are made visible.
   const app = document.getElementById('app-section');
   if (app) app.style.display = 'block';
+
+
+
+  //-------------//-------------//-------------//-------------//-------------//-------------//-------------//-------------//-------------//-------------//-------------
 
   // Anonymous greeting, hide logout
   const nameSpan = document.getElementById('welcome-name');
@@ -267,12 +268,12 @@ function bootDemo() {
 }
 
 
-
+//skips authentication if using demo. Also checks if should log in a prior session the user logged in to
 document.addEventListener('DOMContentLoaded', () => {
   if (DEMO_MODE) {
-    bootDemo();                  // show app immediately, hide auth
+    bootDemo();
   } else {
-    checkLoginStatus();          // normal auth path
+    checkLoginStatus();
   }
 });
 
