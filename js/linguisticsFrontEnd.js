@@ -404,9 +404,9 @@ async function fetchAndRenderTable() {
 
 //-----------------------//-----------------------//-----------------------//-----------------------//-----------------------//-----------------------//-----------------------
 
-
+//This function is for creating the table filled with the selection of examples the user can pick from
 async function fetchAndRenderExamplesTable() {
-  // 1) Grab position=1 clips, plus join in the profile row
+  //Fetches necessary information for all audio clips with a position of 1 and puts in data variable with newest clips first
   const { data, error } = await supabaseClient
     .from('audio_clips')
     .select(`
@@ -421,28 +421,32 @@ async function fetchAndRenderExamplesTable() {
     .eq('position', 1)
     .order('created_at', { ascending: false });
 
+  //Throws error if cannot fetch
   if (error) {
     console.error('Error fetching examples:', error);
     return;
   }
 
+  //Empties example table
   const tbody = document.querySelector('#examples-table tbody');
   tbody.innerHTML = '';
 
+  //Constructing the examples table
   data.forEach(row => {
+    //Creating a new row for each position 1 audio clip (this is not ideal since if there are multiple sets of audios for an example, dups will show up)
     const tr = document.createElement('tr');
 
-    // Label cell
+    //Filling the title cell for this row and appending
     const tdLabel = document.createElement('td');
     tdLabel.textContent = row.label;
     tr.appendChild(tdLabel);
 
-    // Language cell
+    //Filling the language cell for this row and appending
     const tdLang = document.createElement('td');
     tdLang.textContent = row.language;
     tr.appendChild(tdLang);
 
-    // User cell: use joined profile, fallback to raw user_id
+    //Tries to show the user's first and last name from profiles table in supabase. If none, then shows Supabase Auth UID string
     const tdUser = document.createElement('td');
     if (row.profiles) {
       tdUser.textContent = `${row.profiles.first_name} ${row.profiles.last_name}`;
@@ -451,7 +455,7 @@ async function fetchAndRenderExamplesTable() {
     }
     tr.appendChild(tdUser);
 
-    // Make row clickable to re-run main table
+    //If a row is clicked, the above table that shows the example being selected is recreated
     tr.style.cursor = 'pointer';
     tr.addEventListener('click', () => {
       document.getElementById('language-search-input').value = row.language;
@@ -459,18 +463,22 @@ async function fetchAndRenderExamplesTable() {
       fetchAndRenderTable();
     });
 
+    //This example row is added to the table
     tbody.appendChild(tr);
   });
 }
 
 
 
-
+  //This function creates the transcription table shown on tab 2 subtab 3
   function renderSubtab3Table(clips) {
+
+  //Resets the transcription table
   const container = document.getElementById('subtabC');
   const old = container.querySelector('table');
   if (old) old.remove();
 
+  //Creating table with clean borders
   const tbl = document.createElement('table');
   tbl.style.width = '100%';
   tbl.style.borderCollapse = 'collapse';
