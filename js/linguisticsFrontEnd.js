@@ -219,7 +219,7 @@ async function checkLoginStatus() {
     openNestedTab("subtabC", this, "tab2");
   });
 
-  // Updating UI with name. If profile data exists, it sets the welcome message text to include first and last name. If not, the email is used instead (ternary operator)
+  //Updating UI with name. If profile data exists, it sets the welcome message text to include first and last name. If not, the email is used instead (ternary operator)
   const nameSpan = document.getElementById('welcome-name');
   if (nameSpan) {
     nameSpan.textContent = profileData
@@ -227,7 +227,7 @@ async function checkLoginStatus() {
       : session.user.email;
   }
 
-  // Fetch tables for tab 2 subtab 2. The transcriptions table for tab 2 subtab 3 is also constructed via a function call inside of fetchAndRenderTable()
+  //Fetch tables for tab 2 subtab 2. The transcriptions table for tab 2 subtab 3 is also constructed via a function call inside of fetchAndRenderTable()
   fetchAndRenderTable();
   fetchAndRenderExamplesTable();
 }
@@ -241,17 +241,15 @@ function bootDemo() {
   const app = document.getElementById('app-section');
   if (app) app.style.display = 'block';
 
-
-
-  //-------------//-------------//-------------//-------------//-------------//-------------//-------------//-------------//-------------//-------------//-------------
-
-  // Anonymous greeting, hide logout
+  //Changes greeting to anonymous
   const nameSpan = document.getElementById('welcome-name');
   if (nameSpan) nameSpan.textContent = 'Anonymous';
+
+  //Removes log out button for demo
   const logoutBtn = document.getElementById('logout-btn');
   if (logoutBtn) logoutBtn.style.display = 'none';
 
-  // Wire tabs (these were wired inside checkLoginStatus for the real app)
+  //when a tab button is clicked, the openTab function is called to switch tabs accordingly
   document.getElementById("tab1-btn").addEventListener("click", function() { openTab("tab1", this); });
   document.getElementById("tab2-btn").addEventListener("click", function() { openTab("tab2", this); });
   document.getElementById("tab3-btn").addEventListener("click", function() { openTab("tab3", this); });
@@ -259,14 +257,13 @@ function bootDemo() {
   document.getElementById("subtabB-btn").addEventListener("click", function() { openNestedTab("subtabB", this, "tab2"); });
   document.getElementById("subtabC-btn").addEventListener("click", function() { openNestedTab("subtabC", this, "tab2"); });
 
-  // Read-only data loads (requires your Supabase RLS to allow anonymous SELECT)
+  //Fetch tables for tab 2 subtab 2. The transcriptions table for tab 2 subtab 3 is also constructed via a function call inside of fetchAndRenderTable()
   fetchAndRenderTable();
   fetchAndRenderExamplesTable();
 
-  // Make sure the wizard renders
+  //starts the wizard process on tab 3 on step 1
   showStep(1);
 }
-
 
 //skips authentication if using demo. Also checks if should log in a prior session the user logged in to
 document.addEventListener('DOMContentLoaded', () => {
@@ -277,41 +274,36 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 });
 
-
-
-
+//refetching the top table displaying the selected example everytime the filters are changed for tab 2 subtab 2
 const langInput = document.getElementById('language-search-input');
 const labelInput = document.getElementById('label-search-input');
 labelInput.addEventListener('input', () => fetchAndRenderTable());
 langInput.addEventListener('input',  () => fetchAndRenderTable());
 
-// 2) Grab D’s inputs
+//refetching the top table displaying the selected example everytime the filters are changed for tab 3 step 2
 const langInputD  = document.getElementById('language-search-input-d');
 const labelInputD = document.getElementById('label-search-input-d');
-
-// 3) Re-fetch when D’s filters change
 labelInputD.addEventListener('input', fetchAndRenderTableD);
 langInputD.addEventListener('input',  fetchAndRenderTableD);
 
-
-
-
-
-
-
+/*
+This function is for building the top table on tab 2 subtab 2. This table displays the example the user selects.
+It fetches the information required to build the header filled with audio play buttons, then calls renderSubtab3Table() to build the audio header.
+It then constructs the rest of the table, including the images, checkmarks, rows, etc.
+*/
 async function fetchAndRenderTable() {
-  // 1) Read the two filters
+  //reading the filter values
   const labelFilter    = labelInput.value.trim();
   const languageFilter = langInput.value.trim();
 
-  // 2) If no label is entered, clear the table and stop
+  //If there there is nothing in the filters, create an empty table and return
   if (!labelFilter) {
     document.querySelector('#image-table thead tr').innerHTML = '<th>Image</th>';
     document.querySelector('#image-table tbody').innerHTML = '';
     return;
   }
 
-  // 3) Fetch the audio clips matching both label AND language
+  //Tries to get the proper audio clips with the given title and language in positional order and stores in clips. Throws error if fails using object destructuring
   const { data: clips, error: clipsError } = await supabaseClient
     .from('audio_clips')
     .select('id, path, transcription')
@@ -323,14 +315,16 @@ async function fetchAndRenderTable() {
     return;
   }
 
+  //calls the function that builds the audio header based on the given audio clips
   renderSubtab3Table(clips);
 
-  
-
-
-  // 4) Build the <thead> (one “Image” + one “Play” per clip)
+  //Building the rest of the table after renderSubtab3Table() handles the audio header
   const theadRow = document.querySelector('#image-table thead tr');
+
+  //Image text title
   theadRow.innerHTML = '<th>Image</th>';
+
+  //This is actually doing the same work as renderSubtab3Table(clips)
   clips.forEach(clip => {
     const th  = document.createElement('th');
     const btn = document.createElement('button');
@@ -341,7 +335,7 @@ async function fetchAndRenderTable() {
     theadRow.appendChild(th);
   });
 
-  // 5) Fetch the images matching only the label
+  //Tries fetching the images with for the given example title in positional order and stores in images. Throws error if fails
   const { data: images, error: imgError } = await supabaseClient
     .from('images')
     .select('id, path, label')
@@ -352,22 +346,23 @@ async function fetchAndRenderTable() {
     return;
   }
 
-    // 6️⃣ Fetch the image-audio mapping USING column instead of audio_clip_id
+  //Tries fetching the location of the checkmarks and stores in mapData. Throws error if fails, but allows function to continue
   const { data: mapData, error: mapError } = await supabaseClient
     .from('image_audio_map')
     .select('image_id, column, has_check');
   if (mapError) {
     console.error('Map load error:', mapError);
-    // we can still continue, but no checkmarks will appear
   }
 
-  // 7️⃣ Build the <tbody>
+  //The rest of the function creates the rest of the table using images and mapData
   const tbody = document.querySelector('#image-table tbody');
+  //the table is cleared
   tbody.innerHTML = '';
+  //iterating through the img's in images
   images.forEach(img => {
+    //a new row is created
     const tr = document.createElement('tr');
-
-    // — first cell: the image
+    //the left-most cell is set as the proper image
     const tdImg = document.createElement('td');
     const el    = document.createElement('img');
     el.src      = img.path;
@@ -377,17 +372,20 @@ async function fetchAndRenderTable() {
     tdImg.appendChild(el);
     tr.appendChild(tdImg);
 
-    // — one cell per clip, with checkmark logic based on `column`
+    //iterating once for each audio clip (which means it iterates once per column)(clip parameter not actually used)
     clips.forEach((clip, clipIndex) => {
+      //new table data for each col/row combination
       const td = document.createElement('td');
 
-      // Compute this clip's columnNumber = clipIndex + 1
+      //adjusting value 
       const columnNumber = clipIndex + 1;
-      // Look for a mapping where image_id matches and column matches
+
+      //checks if there should be a checkmark in this td
       const mapping = mapData.find(
         m => m.image_id === img.id && m.column === columnNumber
       );
 
+      //adds checkmark if necessary
       if (mapping?.has_check) {
         const mark = document.createElement('img');
         mark.src    = 'images/checkmark.png';
@@ -396,14 +394,15 @@ async function fetchAndRenderTable() {
         mark.style.height = '20px';
         td.appendChild(mark);
       }
-
       tr.appendChild(td);
     });
 
+    //adds the row to the table
     tbody.appendChild(tr);
   });
-
 }
+
+//-----------------------//-----------------------//-----------------------//-----------------------//-----------------------//-----------------------//-----------------------
 
 
 async function fetchAndRenderExamplesTable() {
