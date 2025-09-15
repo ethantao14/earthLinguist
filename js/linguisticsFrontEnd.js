@@ -402,8 +402,6 @@ async function fetchAndRenderTable() {
   });
 }
 
-//-----------------------//-----------------------//-----------------------//-----------------------//-----------------------//-----------------------//-----------------------
-
 //This function is for creating the table filled with the selection of examples the user can pick from
 async function fetchAndRenderExamplesTable() {
   //Fetches necessary information for all audio clips with a position of 1 and puts in data variable with newest clips first
@@ -483,27 +481,29 @@ async function fetchAndRenderExamplesTable() {
   tbl.style.width = '100%';
   tbl.style.borderCollapse = 'collapse';
 
-  // ─── column headers ───
+  //Creates table head and header row
   const thead = tbl.createTHead();
   const headerRow = thead.insertRow();
 
+  //Appends audio table head
   const thAudio = document.createElement('th');
   thAudio.textContent = 'Audio';
   thAudio.style.padding = '8px';
   thAudio.style.border = '1px solid #A7A1C2';
   headerRow.appendChild(thAudio);
 
+  //Appends transcription table head
   const thTrans = document.createElement('th');
   thTrans.textContent = 'Transcription';
   thTrans.style.padding = '8px';
   thTrans.style.border = '1px solid #A7A1C2';
   headerRow.appendChild(thTrans);
 
-  // ─── one row per clip ───
   clips.forEach(clip => {
+    //A row is added for each audio clip in clips
     const tr = tbl.insertRow();
 
-    // left cell: Play button
+    //Appends play button for this row that plays this audio clip when pressed
     const tdBtn = tr.insertCell();
     const btn = document.createElement('button');
     btn.textContent = 'Play';
@@ -511,31 +511,30 @@ async function fetchAndRenderExamplesTable() {
     btn.addEventListener('click', () => new Audio(clip.path).play());
     tdBtn.appendChild(btn);
 
-    // right cell: transcription text
+    //Inserts transcription to row, or nothing if no transcription in supabase
     const tdTrans = tr.insertCell();
     tdTrans.style.border = '1px solid #A7A1C2';
     tdTrans.style.padding = '8px';
     tdTrans.textContent = clip.transcription || '';
   });
 
+  //Row added to table
   container.appendChild(tbl);
 }
 
-
-
 async function fetchAndRenderTableD() {
-  // 1) Read filters
+  //Reading filter values
   const labelFilter    = document.getElementById('label-search-input-d').value.trim();
   const languageFilter = document.getElementById('language-search-input-d').value.trim();
 
-  // 2) If empty, clear table
+  //If the filters are empty, empty table and end
   if (!labelFilter) {
     document.querySelector('#image-table-d thead tr').innerHTML = '<th>Image</th>';
     document.querySelector('#image-table-d tbody').innerHTML = '';
     return;
   }
 
-  // 3) Fetch clips
+  //Fetching the audio clips. This indicates the # of columns
   const { data: clips, error: clipsError } = await supabaseClient
     .from('audio_clips')
     .select('id, path')
@@ -547,28 +546,39 @@ async function fetchAndRenderTableD() {
     return;
   }
 
+  //Should de deleted later. Pretty sure this line inserts the audios from the db to step 3 instead of the session audios.
   renderRecordTranscriptionsTable(clips);
 
-
-  // 4) Build THEAD (one “Image” + one “Record” button per clip)
+  //Building first row of table
   const theadRow = document.querySelector('#image-table-d thead tr');
+
+  //Left-most cell is "image" text
   theadRow.innerHTML = '<th>Image</th>';
+
+  //Table head and record button created once for each audio clip in the database version
   clips.forEach((clip, clipIndex) => {
+    //Table head and record button created and added
     const th  = document.createElement('th');
     const btn = document.createElement('button');
     btn.textContent = 'Record';
     btn.classList.add('custom-button');
 
+    //Recording variable and audio clip for this cell
     let mediaRecorder, chunks;
 
+    //When record button clicked...
     btn.addEventListener('click', async () => {
-      // start recording
+      //If no recording variable or it's inactive...
       if (!mediaRecorder || mediaRecorder.state === 'inactive') {
 
+        //Remove old audio clip
         delete pendingRecordings[clip.id];
+
+        //Removing old audio clip preview
         const oldPreview = btn.parentNode.querySelector('audio');
         if (oldPreview) oldPreview.remove();
 
+        //Turning on the mic, starts recording, and prepares to collect audio chunks, while flipping the button UI to "stop"
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
         mediaRecorder = new MediaRecorder(stream);
         chunks = [];
@@ -576,48 +586,41 @@ async function fetchAndRenderTableD() {
         mediaRecorder.start();
         btn.textContent = 'Stop';
       }
-      // stop & upload
+
+      //Ends the recording, saves the new audio blob in memory, and shows a playback preview
       else {
         mediaRecorder.stop();
         btn.textContent = 'Record';
-
         mediaRecorder.onstop = () => {
-        const blob = new Blob(chunks, { type: 'audio/webm' });
-        // store both the blob and its button‐index (position)
-        pendingRecordings[clip.id] = {
-          blob,
-          position: clipIndex + 1
+          const blob = new Blob(chunks, { type: 'audio/webm' });
+          pendingRecordings[clip.id] = {
+            blob,
+            position: clipIndex + 1
+          };
+          const preview = document.createElement('audio');
+          preview.controls = true;
+          preview.src = URL.createObjectURL(blob);
+          btn.parentNode.appendChild(preview);
+          btn.textContent = 'Record';
         };
-
-        // preview
-        const preview = document.createElement('audio');
-        preview.controls = true;
-        preview.src = URL.createObjectURL(blob);
-        btn.parentNode.appendChild(preview);
-
-        btn.textContent = 'Record';
-      };
-
-
       }
     });
 
+    //Adds cell to header of table
     th.appendChild(btn);
 
-
-
+    //Adds preview if exists
     if (pendingRecordings[clip.id]) {
-    const { blob } = pendingRecordings[clip.id];
-    const preview = document.createElement('audio');
-    preview.controls = true;
-    preview.src = URL.createObjectURL(blob);
-    th.appendChild(preview);
-  }
-
+      const { blob } = pendingRecordings[clip.id];
+      const preview = document.createElement('audio');
+      preview.controls = true;
+      preview.src = URL.createObjectURL(blob);
+      th.appendChild(preview);
+    }
     theadRow.appendChild(th);
   });
 
-  // 5) rest of your body‐building code unchanged…
+  //Tries to fetch images required for this example
   const { data: images, error: imgErr } = await supabaseClient
     .from('images')
     .select('id, path, label')
@@ -625,16 +628,20 @@ async function fetchAndRenderTableD() {
     .order('position', { ascending: true });
   if (imgErr) return console.error(imgErr);
 
+  //Tries to fetch the check mark locations
   const { data: mapData, error: mapErr } = await supabaseClient
     .from('image_audio_map')
     .select('image_id, column, has_check');
   if (mapErr) console.warn(mapErr);
 
+  //Creating table body
   const tbody = document.querySelector('#image-table-d tbody');
   tbody.innerHTML = '';
+
+  //Creating row for each image
   images.forEach(img => {
+    //Adding image
     const tr = document.createElement('tr');
-    // image cell
     const tdImg = document.createElement('td');
     const el    = document.createElement('img');
     el.src      = img.path;
@@ -643,7 +650,7 @@ async function fetchAndRenderTableD() {
     tdImg.appendChild(el);
     tr.appendChild(tdImg);
 
-    // one checkmark cell per clip
+    //After image is added, for each column (indicated by a clip in the original database example), appends checkmark/blank
     clips.forEach((_, i) => {
       const td = document.createElement('td');
       const m  = mapData.find(m => m.image_id === img.id && m.column === i + 1);
@@ -658,11 +665,12 @@ async function fetchAndRenderTableD() {
       tr.appendChild(td);
     });
 
+    //This row added to table
     tbody.appendChild(tr);
   });
 }
 
-
+//---------------------------------//---------------------------------//---------------------------------//---------------------------------//---------------------------------
 
 async function fetchAndRenderExamplesTableD() {
   // 1) Fetch examples plus joined profile data
