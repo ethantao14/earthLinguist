@@ -1,3 +1,99 @@
+/*
+================================================================================
+FUNCTION DICTIONARY
+================================================================================
+
+checkLoginStatus(): Promise<void>
+- WHAT: Verifies if a Supabase session exists, stores user id, fetches profile,
+        hides auth UI, shows app UI, wires up tab buttons, loads examples and
+        tables, and sets welcome message.
+- WHERE CALLED: After login success, and on DOMContentLoaded (if not DEMO_MODE).
+- PARAMS: None.
+- RETURNS: Promise<void>.
+
+bootDemo(): void
+- WHAT: Enters demo mode: hides auth UI, shows app UI with anonymous greeting,
+        hides logout, wires tab buttons, fetches tables, starts wizard.
+- WHERE CALLED: On DOMContentLoaded (if DEMO_MODE true).
+- PARAMS: None.
+- RETURNS: void.
+
+fetchAndRenderTable(): Promise<void>
+- WHAT: Builds Tab 2 Subtab B/C table with image grid and audio play headers.
+        Queries audio_clips, images, and image_audio_map, then renders table.
+- WHERE CALLED: On label/language filter input change; in examples row click.
+- PARAMS: None (reads filter inputs directly).
+- RETURNS: Promise<void>.
+
+fetchAndRenderExamplesTable(): Promise<void>
+- WHAT: Builds the list of example rows (label, language, user). Each row click
+        sets filters and triggers fetchAndRenderTable().
+- WHERE CALLED: In checkLoginStatus() during app init.
+- PARAMS: None.
+- RETURNS: Promise<void>.
+
+renderSubtab3Table(clips: Array): void
+- WHAT: Builds transcription table in Tab 2 Subtab C: audio play buttons + static
+        transcriptions from database.
+- WHERE CALLED: Inside fetchAndRenderTable().
+- PARAMS: clips – array of audio clip objects with path/transcription.
+- RETURNS: void.
+
+fetchAndRenderTableD(): Promise<void>
+- WHAT: Builds Tab 3 Step 2 table: creates record buttons for each audio clip,
+        allows microphone recording, stores blobs in pendingRecordings, shows
+        previews, renders image/checkmark rows, and also calls
+        renderRecordTranscriptionsTable(clips) at top (placeholder).
+- WHERE CALLED: On label/language filter input change; in examples row click;
+        inside showStep(2).
+- PARAMS: None (reads filter inputs directly).
+- RETURNS: Promise<void>.
+
+fetchAndRenderExamplesTableD(): Promise<void>
+- WHAT: Builds example selection table for Tab 3 Step 2. Clicking row sets
+        currentLanguage/currentLabel and triggers fetchAndRenderTableD().
+- WHERE CALLED: Inside showStep(2).
+- PARAMS: None.
+- RETURNS: Promise<void>.
+
+refreshStep3FromSession(): Promise<void>
+- WHAT: Reloads audio clips for the active currentSessionId, sorts them,
+        rebuilds Step 3 transcription table via renderRecordTranscriptionsTable().
+- WHERE CALLED: After submission (to sync session data).
+- PARAMS: None (uses global currentSessionId).
+- RETURNS: Promise<void>.
+
+renderRecordTranscriptionsTable(clips: Array): void
+- WHAT: Builds Step 3 table where user transcribes their recorded clips.
+        Each row: play button + input field, with values cached in
+        pendingTranscriptions.
+- WHERE CALLED: refreshStep3FromSession(); fetchAndRenderTableD(); showStep(3).
+- PARAMS: clips – array of clip objects with id, path, position, transcription.
+- RETURNS: void.
+
+openTab(tabId: string, clickedButton: HTMLElement): void
+- WHAT: Generic function to switch main tabs (Tab1/2/3).
+- WHERE CALLED: Wired in checkLoginStatus() and bootDemo().
+- PARAMS: tabId – id of tab content div; clickedButton – tab button element.
+- RETURNS: void.
+
+openNestedTab(subTabId: string, clickedButton: HTMLElement, parentTabId: string): void
+- WHAT: Switches nested tabs within a parent tab.
+- WHERE CALLED: Wired in checkLoginStatus() and bootDemo().
+- PARAMS: subTabId – nested content id; clickedButton – button element;
+          parentTabId – parent tab’s id.
+- RETURNS: void.
+
+showStep(step: number): void
+- WHAT: Controls 3-step wizard (Tab 3). Updates active step, progress bar,
+        footer button visibility, and triggers data fetch/render for step 2/3.
+- WHERE CALLED: At login (step 1), in bootDemo(), and via prev/next buttons.
+- PARAMS: step – integer (1–3).
+- RETURNS: void.
+*/
+
+
+
 //Objects/Variables
 
 //Cache of audio clips. Clip ID distinguishes audio, blob is the audio clip, and position is its position in the table. Used in step 2 of tab 3 for submission.
