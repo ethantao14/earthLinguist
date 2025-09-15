@@ -670,10 +670,8 @@ async function fetchAndRenderTableD() {
   });
 }
 
-//---------------------------------//---------------------------------//---------------------------------//---------------------------------//---------------------------------
-
 async function fetchAndRenderExamplesTableD() {
-  // 1) Fetch examples plus joined profile data
+  //Fetching required information for all audio clips that have position 1
   const { data, error } = await supabaseClient
     .from('audio_clips')
     .select(`
@@ -688,60 +686,57 @@ async function fetchAndRenderExamplesTableD() {
     .eq('position', 1)
     .order('created_at', { ascending: false });
 
+  //Error thrown if cannot fetch audio clips' information
   if (error) {
     console.error('Error fetching examples for Subtab D:', error);
     return;
   }
 
-  // 2) Render into the D-tab’s <tbody>
+  //Empties examples table
   const tbody = document.querySelector('#examples-table-d tbody');
   tbody.innerHTML = '';
 
+  //Creating a row for each record from the SQL query
   data.forEach(row => {
     const tr = document.createElement('tr');
-
-    // Label cell
     const tdLabel = document.createElement('td');
     tdLabel.textContent = row.label;
     tr.appendChild(tdLabel);
 
-    // Click to re-run D-tab’s main table
+    //If a row is clicked, the filter values are adjusted, and then the top table displaying the example is remade
     tr.style.cursor = 'pointer';
     tr.addEventListener('click', async () => {
-      // 1) Set the inputs & context
       document.getElementById('language-search-input-d').value = row.language;
       document.getElementById('label-search-input-d').value    = row.label;
       currentLanguage = row.language;
       currentLabel    = row.label;
-
-      
-
-      // 3) Now load the D‐tab clips table
       fetchAndRenderTableD();
     });
 
-
+    //Row added to table
     tbody.appendChild(tr);
   });
 }
 
 
 async function refreshStep3FromSession() {
+  //Only refreshes recording trascription table if in a session
   if (!currentSessionId) return;
 
-  // Get the clips we just saved for this session, ordered by position
+  //Fetching audio clips from this session
   const { data: clips, error } = await supabaseClient
     .from('audio_clips')
     .select('id, path, transcription, position')
     .eq('session_id', currentSessionId)
     .order('position', { ascending: true });
 
+  //Throws error if cannot fetch audio clips
   if (error) {
     console.error('Error fetching session clips for step 3:', error);
     return;
   }
 
-  // Map to the shape renderRecordTranscriptionsTable expects (it only uses id, path, transcription)
+  //Organizes audio clips and calls renderRecordTranscriptionsTable() to rebuild the table
   const normalizedClips = clips
     .map(c => ({
       id: c.id,
@@ -754,44 +749,40 @@ async function refreshStep3FromSession() {
   renderRecordTranscriptionsTable(normalizedClips);
 }
 
-
-
-
-
-
-
 function renderRecordTranscriptionsTable(clips) {
+  //Remove old transcriptions table
   const container = document.getElementById('step-3');
-  // remove any old table
   const old = container.querySelector('table');
   if (old) old.remove();
 
-  // build new table
+  //Create new table
   const tbl = document.createElement('table');
   tbl.style.width = '100%';
   tbl.style.borderCollapse = 'collapse';
 
-  // ─── headers ───
+  //Creating table Head
   const thead = tbl.createTHead();
   const headerRow = thead.insertRow();
 
+  //"Audio" table header
   const thAudio = document.createElement('th');
   thAudio.textContent = 'Audio';
   thAudio.style.padding = '8px';
   thAudio.style.border = '1px solid #A7A1C2';
   headerRow.appendChild(thAudio);
 
+  //"Your Transcription" table header
   const thInput = document.createElement('th');
   thInput.textContent = 'Your Transcription';
   thInput.style.padding = '8px';
   thInput.style.border = '1px solid #A7A1C2';
   headerRow.appendChild(thInput);
 
-  // ─── one row per clip ───
+  //Row created for each audio clip
   clips.forEach(clip => {
     const tr = tbl.insertRow();
 
-    // ◼ Play button cell
+    //Creates play button for audio
     const tdBtn = tr.insertCell();
     tdBtn.style.border = '1px solid #A7A1C2';
     tdBtn.style.padding = '8px';
@@ -803,7 +794,7 @@ function renderRecordTranscriptionsTable(clips) {
     });
     tdBtn.appendChild(btn);
 
-    // ◼ Input cell
+    //Creates cell for user to type transcription
     const tdInp = tr.insertCell();
     tdInp.style.border = '1px solid #A7A1C2';
     tdInp.style.padding = '8px';
@@ -812,268 +803,252 @@ function renderRecordTranscriptionsTable(clips) {
     input.placeholder = 'Type sentence…';
     input.style.width = '100%';
 
-      // restore any previous value
-  input.value = pendingTranscriptions[clip.id] || '';
-  // update our store on every keystroke
-  input.addEventListener('input', e => {
-    pendingTranscriptions[clip.id] = e.target.value;
-  });
+    //The cells where the user types the transcriptions are filled with prior transcriptions from this session so they aren't lost when switching between steps
+    input.value = pendingTranscriptions[clip.id] || '';
+    //Transcriptions stored in cache
+    input.addEventListener('input', e => {
+      pendingTranscriptions[clip.id] = e.target.value;
+    });
 
-
-
-    // associate with clip.id if you need later
+    //Links transcription to audio clip
     input.dataset.clipId = clip.id;
+
+    //Transcription added to table
     tdInp.appendChild(input);
   });
 
+  //Table body added to table
   container.appendChild(tbl);
 }
 
-
-
-
-
-
-// Function to switch tabs
+//Function to switch tabs
 function openTab(tabId, clickedButton) {
-    // Hide all tab contents
-    document.querySelectorAll('.tab-content').forEach(tab => {
-        tab.classList.remove('active');
-    });
+  //Hide all tab contents
+  document.querySelectorAll('.tab-content').forEach(tab => {
+    tab.classList.remove('active');
+  });
 
-    // Remove 'active' class from all buttons
-    document.querySelectorAll('.tab-button').forEach(button => {
-        button.classList.remove('active');
-    });
+  //Remove 'active' class from all buttons
+  document.querySelectorAll('.tab-button').forEach(button => {
+    button.classList.remove('active');
+  });
 
-    // Show the selected tab
-    document.getElementById(tabId).classList.add('active');
+  //Show the selected tab
+  document.getElementById(tabId).classList.add('active');
 
-    // Highlight the clicked tab button
-    clickedButton.classList.add('active');
+  //Highlight the clicked tab button
+  clickedButton.classList.add('active');
 }
 
-// Function to switch nested tabs
+//Function to switch nested tabs
 function openNestedTab(subTabId, clickedButton, parentTabId) {
-    // Hide all nested tab contents inside the parent tab
-    document.querySelectorAll(`#${parentTabId} .nested-tab-content`).forEach(tab => {
-        tab.classList.remove('active');
-    });
+  //Hide all nested tab contents inside the parent tab
+  document.querySelectorAll(`#${parentTabId} .nested-tab-content`).forEach(tab => {
+    tab.classList.remove('active');
+  });
 
-    // Remove 'active' class from all nested buttons inside the parent tab
-    document.querySelectorAll(`#${parentTabId} .nested-tab-button`).forEach(button => {
-        button.classList.remove('active');
-    });
+  //Remove 'active' class from all nested buttons inside the parent tab
+  document.querySelectorAll(`#${parentTabId} .nested-tab-button`).forEach(button => {
+    button.classList.remove('active');
+  });
 
-    // Show the selected nested tab
-    document.getElementById(subTabId).classList.add('active');
+  //Show the selected nested tab
+  document.getElementById(subTabId).classList.add('active');
 
-    // Highlight the clicked nested tab button
-    clickedButton.classList.add('active');
+  //Highlight the clicked nested tab button
+  clickedButton.classList.add('active');
 }
 
-
-// ─── Wizard Logic for Tab 3 ───
+//Recording Process
 const totalSteps = 3;
 let currentStep = 1;
 
 async function showStep(step) {
-  // 1) show/hide steps
+  //Adjusts "active" class to show correct step
   for (let i = 1; i <= totalSteps; i++) {
-    document
-      .getElementById(`step-${i}`)
-      .classList.toggle('active', i === step);
+    document.getElementById(`step-${i}`).classList.toggle('active', i === step);
   }
 
-  // 2) update progress bar: 1/3, 2/3, 3/3
+  //Adjust progress bar
   const pct = (step / totalSteps) * 100;
   document.getElementById('progress-bar').style.width = `${pct}%`;
 
-
-
-  // ─── swap Prev / Next / Submit & align ───
+  //Step-switching based on buttons/current step
   const prevBtn   = document.getElementById('prev-btn');
   const nextBtn   = document.getElementById('next-btn');
   const submitBtn = document.getElementById('submit-recordings-btn');
   const footer    = document.querySelector('.wizard-buttons');
 
   if (step === 1) {
-    // only “Next”, centered
     prevBtn.style.display       = 'none';
     nextBtn.style.display       = 'inline-block';
     submitBtn.style.display     = 'none';
     footer.style.justifyContent = 'flex-end';
   }
   else if (step === totalSteps) {
-    // “Prev” at left, “Submit” at right
     prevBtn.style.display       = 'inline-block';
     nextBtn.style.display       = 'none';
     submitBtn.style.display     = 'inline-block';
     footer.style.justifyContent = 'space-between';
   }
   else {
-    // “Prev” at left, “Next” at right
     prevBtn.style.display       = 'inline-block';
     nextBtn.style.display       = 'inline-block';
     submitBtn.style.display     = 'none';
     footer.style.justifyContent = 'space-between';
   }
 
-
-
-
-  
-
-
-
-
-
-
-
+  //rendering step 2 tables
   if (step === 2) {
     fetchAndRenderExamplesTableD();
     fetchAndRenderTableD();
   }
 
+  //fetching audio clips and rendering step 3 tables
   if (step === 3) {
-  // Build the clip list from your in‑memory pendingRecordings
-  const clips = Object.entries(pendingRecordings)
-    .map(([id, { blob, position }]) => ({
+    const clips = Object.entries(pendingRecordings).map(([id, { blob, position }]) => ({
       id,
       path: URL.createObjectURL(blob),
       position,
     }))
     .sort((a, b) => a.position - b.position);
-
-  renderRecordTranscriptionsTable(clips);
+    renderRecordTranscriptionsTable(clips);
+  }
 }
 
-}
-
-// wire up buttons
+//Setting up buttons
 document.getElementById('prev-btn').addEventListener('click', () => {
-  if (currentStep > 1) showStep(--currentStep);
+  if (currentStep > 1)
+    showStep(--currentStep);
 });
 document.getElementById('next-btn').addEventListener('click', () => {
   if (currentStep < totalSteps) {
     showStep(++currentStep);
-  } else {
-    // final step “Finish” action
+  } 
+  else {
     alert('All done!');
   }
 });
 
+//Step 3 Submission
+document.getElementById('submit-recordings-btn').addEventListener('click', async () => {
+  //message to user
+  const status = document.getElementById('submit-status');
 
+  //Prevents submission in demo
+  if (DEMO_MODE) {
+    status.textContent = 'To submit, move to non-demo version linked on resume.';
+    return;
+  }
 
+  //Tells user submission is occuring
+  status.textContent = 'Uploading…';
+  
 
+  //Reading step 1 values
+  const language = document.getElementById('record-language').value.trim();
+  const location = document.getElementById('record-location').value.trim();
 
-// ─── BATCH-SUBMIT: “Submit All Recordings” ───
-document
-  .getElementById('submit-recordings-btn')
-  .addEventListener('click', async () => {
-    const status = document.getElementById('submit-status');
+  //Inserting user, title, language, and location to supabase
+  //Returns session id
+  const { data: sessionRow, error: sessionErr } = await supabaseClient
+  .from('recording_sessions')
+  .insert([{
+    user_id:  currentUserId,
+    label:    currentLabel,
+    language,
+    location
+  }])
+    .select('id')
+    .single();
 
-    // Demo: block writes
-    if (DEMO_MODE) {
-      status.textContent = 'To submit, move to non-demo version linked on resume.';
-      return;
+  //Throws error if couldn't create session
+  if (sessionErr) {
+    console.error('Could not create session:', sessionErr);
+    status.textContent = 'Error creating session';
+    return;
+  }
+
+  //Storing session id
+  currentSessionId = sessionRow.id;
+
+  //Clears out step 1 input values
+  document.getElementById('record-language').value = '';
+  document.getElementById('record-location').value = '';
+
+  try {
+    //Storing audio clips
+    for (const clipId in pendingRecordings) {
+    const { blob, position } = pendingRecordings[clipId];
+    const fileName = `${clipId}_${Date.now()}.webm`;
+
+    //Uploading audio clips to supabase bucket
+    const { data: up, error: upErr } = await supabaseClient
+      .storage
+      .from('user-recordings')
+      .upload(fileName, blob);
+
+    //Error catching
+    if (upErr) throw upErr;
+
+    //Getting url from bucket in supabase
+    const { data: urlData, error: urlErr } = await supabaseClient
+      .storage
+      .from('user-recordings')
+      .getPublicUrl(fileName);
+
+    //Error catching and storing
+    if (urlErr) throw urlErr;
+    const publicUrl = urlData.publicUrl;
+
+    //Inserting information in supabase database
+    const id = crypto.randomUUID();
+    const transcription = pendingTranscriptions[clipId] || null;
+    const { error: dbErr } = await supabaseClient
+      .from('audio_clips')
+      .insert([{
+        id,
+        user_id:       currentUserId,
+        session_id:    currentSessionId,
+        label:         currentLabel,
+        language:      language, // from step 1
+        path:          publicUrl,
+        position:      position,
+        verified:      false,
+        transcription: transcription,
+        annotation:    null
+      }]);
+
+    //Error catching
+    if (dbErr) throw dbErr;
     }
 
-    status.textContent = 'Uploading…';
-    
-
-    // 0️⃣ Create a fresh session, capturing Step 1’s language & location
-    const language = document.getElementById('record-language').value.trim();
-    const location = document.getElementById('record-location').value.trim();
-
-    const { data: sessionRow, error: sessionErr } = await supabaseClient
-    .from('recording_sessions')
-    .insert([{
-      user_id:  currentUserId,
-      label:    currentLabel,
-      language,      // ← newly added
-      location       // ← newly added
-    }])
-      .select('id')
-      .single();
-
-    if (sessionErr) {
-      console.error('Could not create session:', sessionErr);
-      status.textContent = 'Error creating session';
-      return;
-    }
-    currentSessionId = sessionRow.id;
-    // Clear out the Step 1 fields now that we’ve saved them:
-    document.getElementById('record-language').value = '';
-    document.getElementById('record-location').value = '';
-
-
-
-    try {
-      // Upload each staged blob and insert a row, carrying over language and any transcription from step 3
-for (const clipId in pendingRecordings) {
-  const { blob, position } = pendingRecordings[clipId];
-  const fileName = `${clipId}_${Date.now()}.webm`;
-
-  // 1️⃣ Upload to Storage
-  const { data: up, error: upErr } = await supabaseClient
-    .storage
-    .from('user-recordings')
-    .upload(fileName, blob);
-  if (upErr) throw upErr;
-
-  // 1️⃣·b) Get its public URL
-  const { data: urlData, error: urlErr } = await supabaseClient
-    .storage
-    .from('user-recordings')
-    .getPublicUrl(fileName);
-  if (urlErr) throw urlErr;
-  const publicUrl = urlData.publicUrl;
-
-  // 2️⃣ Insert into audio_clips, including step-1 language and corresponding transcription
-  const id = crypto.randomUUID();
-  const transcription = pendingTranscriptions[clipId] || null;
-  const { error: dbErr } = await supabaseClient
-    .from('audio_clips')
-    .insert([{
-      id,
-      user_id:       currentUserId,
-      session_id:    currentSessionId,
-      label:         currentLabel,
-      language:      language, // from step 1
-      path:          publicUrl,
-      position:      position,
-      verified:      false,
-      transcription: transcription,
-      annotation:    null
-    }]);
-  if (dbErr) throw dbErr;
-}
-
-// CLEAR STEP 3 state & inputs (transcriptions)
-pendingTranscriptions = {};
-document
-  .querySelectorAll('#step-3 input[type="text"]')
-  .forEach(input => input.value = '');
+    //Clearing step 3 input values
+    pendingTranscriptions = {};
+    document.querySelectorAll('#step-3 input[type="text"]').forEach(input => input.value = '');
 
 
 
 
   
-      // 3️⃣ Cleanup & refresh
-pendingRecordings = {};
-status.textContent = 'All recordings saved!';
+    //Clearing step 2 input values
+    pendingRecordings = {};
+    status.textContent = 'All recordings saved!';
 
-// refresh the D tab’s table as you already do
-fetchAndRenderTableD();
+    //Refreshing table that displays selected example
+    fetchAndRenderTableD();
 
-// then immediately refresh step 3 from the saved session and show it
-await refreshStep3FromSession();
-currentStep = 3;            // keep your wizard state consistent
-showStep(3);
+    //Refresh step 3 based on step 2
+    await refreshStep3FromSession();
 
-    } catch (err) {
-      console.error(err);
-      status.textContent = `Error: ${err.message}`;
-    }
-  });
+    //Stay on step 3
+    currentStep = 3;
+    showStep(3);
+  }
+
+  //Error catching
+  catch (err) {
+    console.error(err);
+    status.textContent = `Error: ${err.message}`;
+  }
+});
