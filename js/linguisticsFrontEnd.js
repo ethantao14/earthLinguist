@@ -305,9 +305,6 @@ async function checkLoginStatus() {
   document.getElementById("tab3-btn").addEventListener("click", function() {
     openTab("tab3", this);
   });
-  document.getElementById("subtabA-btn").addEventListener("click", function() {
-    openNestedTab("subtabA", this, "tab2");
-  });
   document.getElementById("subtabB-btn").addEventListener("click", function() {
     openNestedTab("subtabB", this, "tab2");
   });
@@ -349,7 +346,6 @@ function bootDemo() {
   document.getElementById("tab1-btn").addEventListener("click", function() { openTab("tab1", this); });
   document.getElementById("tab2-btn").addEventListener("click", function() { openTab("tab2", this); });
   document.getElementById("tab3-btn").addEventListener("click", function() { openTab("tab3", this); });
-  document.getElementById("subtabA-btn").addEventListener("click", function() { openNestedTab("subtabA", this, "tab2"); });
   document.getElementById("subtabB-btn").addEventListener("click", function() { openNestedTab("subtabB", this, "tab2"); });
   document.getElementById("subtabC-btn").addEventListener("click", function() { openNestedTab("subtabC", this, "tab2"); });
 
