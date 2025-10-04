@@ -1,9 +1,10 @@
 # EarthLinguist App
 
-A lightweight web app for collecting and exploring language data. Speakers record short audio clips describing images in their own language; others can listen and read transcriptions for research or learning.
+This project is an application that allows CMU students and linguists to learn languages in a "Gavagai Experiment" fashion. This application is the primary application for 5+ CMU courses in the Department of Philosophy.
+
+## Demo Video
 
 ## Demo
-Use demo mode (no login): add `?demo=1` or `#demo` to the URL.  
 Link: https://earth-linguist.vercel.app/?demo=1
 
 ## Features
@@ -14,6 +15,6 @@ Link: https://earth-linguist.vercel.app/?demo=1
 - Demo mode disables uploads for safe preview
 
 ## Tech Stack
-- HTML, CSS, vanilla JS
+- HTML, CSS, JS
 - Supabase (Auth, Postgres, Storage)
-- Hosted on any static host (e.g., Vercel)
+- Hosted on Vercel
