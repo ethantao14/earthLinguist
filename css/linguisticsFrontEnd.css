@@ -330,3 +330,10 @@ td img {
   flex: 1;
   min-width: 0;
 }
+
+/* put in your CSS */
+.hidden-filter {
+  display: none;
+}
+
+.hidden { display: none; }

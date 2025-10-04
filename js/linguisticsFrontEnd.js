@@ -384,11 +384,15 @@ async function fetchAndRenderTable() {
   // Read filters from the inputs
   const labelFilter    = labelInput.value.trim();
   const languageFilter = langInput.value.trim(); // filter via recording_session.language
+  const wrap = document.getElementById('listen-table-wrap');
+
 
   // If no example title, clear the table and stop
   if (!labelFilter) {
-    document.querySelector('#image-table thead tr').innerHTML = '<th>Image</th>';
+    wrap.classList.add('hidden');
+    document.querySelector('#image-table thead tr').innerHTML = '';
     document.querySelector('#image-table tbody').innerHTML = '';
+    document.getElementById('subtabC').innerHTML = '';
     return;
   }
 
@@ -432,8 +436,11 @@ async function fetchAndRenderTable() {
   renderSubtab3Table((clips || []).map(c => ({ ...c, path: c.audio_path })));
 
   // Header: first "Image" col, then one Play button per audio column
+  wrap.classList.remove('hidden');
   const theadRow = document.querySelector('#image-table thead tr');
-  theadRow.innerHTML = '<th>Image</th>';
+  theadRow.innerHTML = '';
+  theadRow.insertAdjacentHTML('beforeend', '<th>Image</th>');
+
   (clips || []).forEach(clip => {
     const th  = document.createElement('th');
     const btn = document.createElement('button');
@@ -749,10 +756,12 @@ async function fetchAndRenderTableD() {
   //Reading filter values
   const labelFilter    = document.getElementById('label-search-input-d').value.trim();
   const languageFilter = document.getElementById('language-search-input-d').value.trim();
+  const wrap = document.getElementById('record-table-wrap');
 
   //If the filters are empty, empty table and end
   if (!labelFilter) {
-    document.querySelector('#image-table-d thead tr').innerHTML = '<th>Image</th>';
+    wrap.classList.add('hidden');
+    document.querySelector('#image-table-d thead tr').innerHTML = '';
     document.querySelector('#image-table-d tbody').innerHTML = '';
     return;
   }
@@ -776,7 +785,10 @@ async function fetchAndRenderTableD() {
   const theadRow = document.querySelector('#image-table-d thead tr');
 
   //Left-most cell is "image" text
-  theadRow.innerHTML = '<th>Image</th>';
+  wrap.classList.remove('hidden');
+  theadRow.innerHTML = '';
+  theadRow.insertAdjacentHTML('beforeend', '<th>Image</th>');
+
 
   //Table head and record button created once for each audio clip in the database version
   clips.forEach((clip, clipIndex) => {

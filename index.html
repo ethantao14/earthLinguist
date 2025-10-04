@@ -103,21 +103,19 @@
 				<div id="subtabB" class="nested-tab-content active">
 
 					<!-- Title -->
-					<h3>Table</h3>
-
 						<!-- Filters: Choose By Language Or Example Title -->
-						<input type="text" id="language-search-input" placeholder="Type a language… e.g. Icelandic" style="margin-bottom:1rem; padding:0.5rem; width:100%;"/>
-						<input type="text" id="label-search-input" placeholder="Type a label… e.g. Example 1: Chair Example" style="margin-bottom:0.5rem; padding:0.5rem; width:100%;"/>
+						<input type="text" id="language-search-input" class="hidden-filter" placeholder="Type a language… e.g. Icelandic" style="margin-bottom:1rem; padding:0.5rem; width:100%;"/>
+						<input type="text" id="label-search-input" class="hidden-filter" placeholder="Type a label… e.g. Example 1: Chair Example" style="margin-bottom:0.5rem; padding:0.5rem; width:100%;"/>
 
 						<!-- Table That Shows The Selected Example -->
-						<table id="image-table">
-							<thead>
-								<tr><th>Image</th></tr>
-							</thead>
+						<div id="listen-table-wrap" class="hidden">
+							<h3>Table</h3>
+							<table id="image-table">
+								<thead><tr></tr></thead>
+								<tbody></tbody>
+							</table>
+						</div>
 
-							<tbody>
-							</tbody>
-						</table>
 
 						<!-- Table That Shows Examples To Choose From -->
 						<h3>Examples</h3>
@@ -171,23 +169,20 @@
 					<!-- Step 2: Selecting Example And Recording Audios -->
 					<div id="step-2" class="step">
 						<h3>Step 2: Record</h3>
-						<h3>Table</h3>
 
 							<!-- Filter To Select Example By Language Or Title -->
-							<input type="text" id="language-search-input-d" placeholder="Type a language…" style="margin-bottom:1rem; padding:0.5rem; width:100%;"/>
-							<input type="text" id="label-search-input-d" placeholder="Type a label…" style="margin-bottom:0.5rem; padding:0.5rem; width:100%;"/>
+							<input type="text" id="language-search-input-d" class="hidden-filter" placeholder="Type a language…" style="margin-bottom:1rem; padding:0.5rem; width:100%;"/>
+							<input type="text" id="label-search-input-d" class="hidden-filter" placeholder="Type a label…" style="margin-bottom:0.5rem; padding:0.5rem; width:100%;"/>
 
 							<!-- Table That Shows Selected Example -->
-							<table id="image-table-d">
-								<thead>
-									<tr>
-										<th>Image</th>
-									</tr>
-								</thead>
+							<div id="record-table-wrap" class="hidden">
+								<h3>Table</h3>
+								<table id="image-table-d">
+									<thead><tr></tr></thead>
+									<tbody></tbody>
+								</table>
+							</div>
 
-								<tbody>
-								</tbody>
-							</table>
 
 							<!-- Table That Shows Examples To Choose From -->
 							<h3>Examples</h3>
