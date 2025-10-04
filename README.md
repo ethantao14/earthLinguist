@@ -7,7 +7,7 @@ This project is an application that allows CMU students and linguists to learn l
 ## Demo
 Link: https://earth-linguist.vercel.app/?demo=1
 
-## Public Version
+## Public Version (Sign In)
 Link: https://earth-linguist.vercel.app/
 
 ## Features
