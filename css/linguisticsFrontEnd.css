@@ -337,3 +337,41 @@ td img {
 }
 
 .hidden { display: none; }
+
+
+:root {
+  --img-col-width: 120px;   /* first column (image) */
+  --rec-col-width: 96px;    /* each audio/record column */
+}
+
+/* Let the browser size like Listen (not fixed) */
+#image-table-d { table-layout: auto; }
+
+/* First column same across both tables */
+#image-table-d th:first-child,
+#image-table-d td:first-child {
+  width: var(--img-col-width);
+}
+
+/* Make every Record column narrow & consistent */
+#image-table-d th:not(:first-child),
+#image-table-d td:not(:first-child) {
+  width: var(--rec-col-width);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* Stack button + preview vertically and keep them inside the narrow column */
+#image-table-d thead th { vertical-align: top; padding: 0.75rem 0.5rem; }
+#image-table-d thead th .custom-button {
+  width: 100%;
+  padding-left: 0;
+  padding-right: 0;
+}
+#image-table-d thead audio {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  margin-top: 6px;
+}

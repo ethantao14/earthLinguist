@@ -753,12 +753,11 @@ function renderSubtab3Table(clips) {
 }
 
 async function fetchAndRenderTableD() {
-  //Reading filter values
   const labelFilter    = document.getElementById('label-search-input-d').value.trim();
   const languageFilter = document.getElementById('language-search-input-d').value.trim();
   const wrap = document.getElementById('record-table-wrap');
 
-  //If the filters are empty, empty table and end
+  // nothing selected → hide and clear
   if (!labelFilter) {
     wrap.classList.add('hidden');
     document.querySelector('#image-table-d thead tr').innerHTML = '';
@@ -766,193 +765,298 @@ async function fetchAndRenderTableD() {
     return;
   }
 
-  //Fetching the audio clips. This indicates the # of columns
-  const { data: clips, error: clipsError } = await supabaseClient
-    .from('audio_clips')
-    .select('id, path')
-    .eq('label',    labelFilter)
-    .eq('language', languageFilter)
-    .order('position', { ascending: true });
-  if (clipsError) {
-    console.error('Error loading audio_clips for Subtab D:', clipsError);
+  // 1) resolve example (same as Listen)
+  const { data: ex, error: exErr } = await supabaseClient
+    .from('example')
+    .select('id, width, title')
+    .eq('title', labelFilter)
+    .maybeSingle();
+  if (exErr || !ex) {
+    console.error('Could not load example for Step 2:', exErr || 'not found');
+    wrap.classList.add('hidden');
+    document.querySelector('#image-table-d thead tr').innerHTML = '';
+    document.querySelector('#image-table-d tbody').innerHTML = '';
     return;
   }
 
-  //Should de deleted later. Pretty sure this line inserts the audios from the db to step 3 instead of the session audios.
-  renderRecordTranscriptionsTable(clips);
+  // 2) fetch images (same tables as Listen)
+  const { data: images, error: imgErr } = await supabaseClient
+    .from('image')
+    .select('id, image_path, position')
+    .eq('example_id', ex.id)
+    .order('position', { ascending: true });
+  if (imgErr) { console.error('Error loading images (Step 2):', imgErr); return; }
 
-  //Building first row of table
-  const theadRow = document.querySelector('#image-table-d thead tr');
+  // 3) fetch checkmarks (same tables as Listen)
+  const { data: checks, error: ckErr } = await supabaseClient
+    .from('checkmarks')
+    .select('row_index, column_index')
+    .eq('example_id', ex.id);
+  if (ckErr) console.warn('Error loading checkmarks (Step 2):', ckErr);
 
-  //Left-most cell is "image" text
+  // 4) columns = example width (fallback: number of images > 0 ? 1 : 0)
+  const columnsCount = Number.isFinite(ex.width) && ex.width > 0 ? ex.width : (images?.length ? 1 : 0);
+
+  // 5) build header with "Record" buttons (NO fetch of audio here)
   wrap.classList.remove('hidden');
+  const theadRow = document.querySelector('#image-table-d thead tr');
   theadRow.innerHTML = '';
   theadRow.insertAdjacentHTML('beforeend', '<th>Image</th>');
 
-
-  //Table head and record button created once for each audio clip in the database version
-  clips.forEach((clip, clipIndex) => {
-    //Table head and record button created and added
+  for (let c = 1; c <= columnsCount; c++) {
     const th  = document.createElement('th');
     const btn = document.createElement('button');
     btn.textContent = 'Record';
     btn.classList.add('custom-button');
 
-    //Recording variable and audio clip for this cell
     let mediaRecorder, chunks;
 
-    //When record button clicked...
     btn.addEventListener('click', async () => {
-      //If no recording variable or it's inactive...
       if (!mediaRecorder || mediaRecorder.state === 'inactive') {
-
-        //Remove old audio clip
-        delete pendingRecordings[clip.id];
-
-        //Removing old audio clip preview
-        const oldPreview = btn.parentNode.querySelector('audio');
+        // start recording for this column
+        delete pendingRecordings[`col-${c}`];      // clear any old
+        const oldPreview = th.querySelector('audio');
         if (oldPreview) oldPreview.remove();
 
-        //Turning on the mic, starts recording, and prepares to collect audio chunks, while flipping the button UI to "stop"
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
         mediaRecorder = new MediaRecorder(stream);
         chunks = [];
         mediaRecorder.ondataavailable = e => chunks.push(e.data);
         mediaRecorder.start();
         btn.textContent = 'Stop';
-      }
-
-      //Ends the recording, saves the new audio blob in memory, and shows a playback preview
-      else {
+      } else {
+        // stop and save
         mediaRecorder.stop();
         btn.textContent = 'Record';
         mediaRecorder.onstop = () => {
           const blob = new Blob(chunks, { type: 'audio/webm' });
-          pendingRecordings[clip.id] = {
-            blob,
-            position: clipIndex + 1
-          };
+          pendingRecordings[`col-${c}`] = { blob, position: c }; // <-- position = column
           const preview = document.createElement('audio');
           preview.controls = true;
           preview.src = URL.createObjectURL(blob);
-          btn.parentNode.appendChild(preview);
-          btn.textContent = 'Record';
+          th.appendChild(preview);
         };
       }
     });
 
-    //Adds cell to header of table
-    th.appendChild(btn);
-
-    //Adds preview if exists
-    if (pendingRecordings[clip.id]) {
-      const { blob } = pendingRecordings[clip.id];
+    // restore preview if already recorded this column
+    if (pendingRecordings[`col-${c}`]) {
+      const { blob } = pendingRecordings[`col-${c}`];
       const preview = document.createElement('audio');
       preview.controls = true;
       preview.src = URL.createObjectURL(blob);
       th.appendChild(preview);
     }
+
+    th.appendChild(btn);
     theadRow.appendChild(th);
-  });
+  }
 
-  //Tries to fetch images required for this example
-  const { data: images, error: imgErr } = await supabaseClient
-    .from('images')
-    .select('id, path, label')
-    .eq('label', labelFilter)
-    .order('position', { ascending: true });
-  if (imgErr) return console.error(imgErr);
-
-  //Tries to fetch the check mark locations
-  const { data: mapData, error: mapErr } = await supabaseClient
-    .from('image_audio_map')
-    .select('image_id, column, has_check');
-  if (mapErr) console.warn(mapErr);
-
-  //Creating table body
+  // 6) body: images + checkmarks (same logic as Listen)
   const tbody = document.querySelector('#image-table-d tbody');
   tbody.innerHTML = '';
 
-  //Creating row for each image
-  images.forEach(img => {
-    //Adding image
+  (images || []).forEach(img => {
     const tr = document.createElement('tr');
+
+    // image cell
     const tdImg = document.createElement('td');
-    const el    = document.createElement('img');
-    el.src      = img.path;
-    el.style.width  = '100px';
+    const el = document.createElement('img');
+    el.src = img.image_path;
+    el.alt = ex.title || '';
+    el.style.width = '100px';
     el.style.height = 'auto';
     tdImg.appendChild(el);
     tr.appendChild(tdImg);
 
-    //After image is added, for each column (indicated by a clip in the original database example), appends checkmark/blank
-    clips.forEach((_, i) => {
+    // checkmarks for each column
+    for (let c = 1; c <= columnsCount; c++) {
       const td = document.createElement('td');
-      const m  = mapData.find(m => m.image_id === img.id && m.column === i + 1);
-      if (m?.has_check) {
+      const hasMark = (checks || []).some(k =>
+        k.row_index === img.position && k.column_index === c
+      );
+      if (hasMark) {
         const mark = document.createElement('img');
-        mark.src    = 'images/checkmark.png';
-        mark.alt    = '✔';
-        mark.style.width  = '20px';
+        mark.src = 'images/checkmark.png';
+        mark.alt = '✔';
+        mark.style.width = '20px';
         mark.style.height = '20px';
         td.appendChild(mark);
       }
       tr.appendChild(td);
-    });
+    }
 
-    //This row added to table
     tbody.appendChild(tr);
   });
 }
 
 async function fetchAndRenderExamplesTableD() {
-  //Fetching required information for all audio clips that have position 1
-  const { data, error } = await supabaseClient
-    .from('audio_clips')
-    .select(`
-      label,
-      language,
-      user_id,
-      profiles!audio_clips_user_id_fkey (
-        first_name,
-        last_name
-      )
-    `)
-    .eq('position', 1)
+  // 1) Fetch examples (need width to define a "full set")
+  const { data: examples, error } = await supabaseClient
+    .from('example')
+    .select('id, title, width, created_at')
     .order('created_at', { ascending: false });
+  if (error) { console.error('Error fetching examples:', error); return; }
 
-  //Error thrown if cannot fetch audio clips' information
-  if (error) {
-    console.error('Error fetching examples for Subtab D:', error);
-    return;
+  const ids = (examples || []).map(e => e.id);
+
+  // 2) Build example -> language -> user -> Set(positions) ONLY for VERIFIED sessions
+  const byExLangUser = new Map();
+  if (ids.length) {
+    const { data: auds, error: audErr } = await supabaseClient
+      .from('audio')
+      .select(`
+        position,
+        recording_session:recording_session!inner(example_id, language, "user", verification_status)
+      `)
+      .in('recording_session.example_id', ids)
+      .eq('recording_session.verification_status', true);
+    if (audErr) {
+      console.error('Error fetching audio/recording_session:', audErr);
+    } else {
+      for (const row of (auds || [])) {
+        const exId = row.recording_session?.example_id;
+        const lang = row.recording_session?.language;
+        const usr  = row.recording_session?.user;
+        const pos  = row.position;
+        if (!exId || !lang || !usr) continue;
+
+        let langMap = byExLangUser.get(exId);
+        if (!langMap) { langMap = new Map(); byExLangUser.set(exId, langMap); }
+
+        let userMap = langMap.get(lang);
+        if (!userMap) { userMap = new Map(); langMap.set(lang, userMap); }
+
+        let posSet = userMap.get(usr);
+        if (!posSet) { posSet = new Set(); userMap.set(usr, posSet); }
+
+        if (pos != null) posSet.add(pos);
+      }
+    }
   }
 
-  //Empties examples table
+  // Helpers (same as Listen)
+  const hasFullSet = (posSet, need) => {
+    if (!need || need <= 0) return false;
+    for (let i = 1; i <= need; i++) if (!posSet.has(i)) return false;
+    return true;
+  };
+  const fullLanguagesForExample = (ex) => {
+    const need = ex.width && ex.width > 0 ? ex.width : null;
+    const langMap = byExLangUser.get(ex.id) || new Map();
+    const out = [];
+    for (const [lang, userMap] of langMap.entries()) {
+      const ok = Array.from(userMap.values()).some(posSet => hasFullSet(posSet, need));
+      if (ok) out.push(lang);
+    }
+    return out.sort();
+  };
+  const fullUsersForExampleLang = (ex, lang) => {
+    const need = ex.width && ex.width > 0 ? ex.width : null;
+    const langMap = byExLangUser.get(ex.id) || new Map();
+    const userMap = langMap.get(lang) || new Map();
+    const out = [];
+    for (const [usr, posSet] of userMap.entries()) {
+      if (hasFullSet(posSet, need)) out.push(usr);
+    }
+    return out.sort((a, b) => a.localeCompare(b));
+  };
+
+  // 3) Render into #examples-table-d with same columns as Listen
+  const thead = document.querySelector('#examples-table-d thead tr');
+  if (thead) thead.innerHTML = '<th>Title</th><th>Languages</th><th>User</th>';
+
   const tbody = document.querySelector('#examples-table-d tbody');
   tbody.innerHTML = '';
 
-  //Creating a row for each record from the SQL query
-  data.forEach(row => {
+  (examples || []).forEach(ex => {
+    // Skip examples with no verified audio
+    const langMap = byExLangUser.get(ex.id);
+    if (!langMap || !langMap.size) return;
+
+    const langsFull = fullLanguagesForExample(ex);
+
     const tr = document.createElement('tr');
-    const tdLabel = document.createElement('td');
-    tdLabel.textContent = row.label;
-    tr.appendChild(tdLabel);
 
-    //If a row is clicked, the filter values are adjusted, and then the top table displaying the example is remade
-    tr.style.cursor = 'pointer';
-    tr.addEventListener('click', async () => {
-      document.getElementById('language-search-input-d').value = row.language;
-      document.getElementById('label-search-input-d').value    = row.label;
-      currentLanguage = row.language;
-      currentLabel    = row.label;
+    // Title
+    const tdTitle = document.createElement('td');
+    tdTitle.textContent = ex.title || '';
+    tr.appendChild(tdTitle);
+
+    // Languages dropdown
+    const tdLangs = document.createElement('td');
+    const selLang = document.createElement('select');
+    selLang.style.minWidth = '160px';
+    if (langsFull.length) {
+      langsFull.forEach(l => {
+        const opt = document.createElement('option');
+        opt.value = opt.textContent = l;
+        selLang.appendChild(opt);
+      });
+    } else {
+      const opt = document.createElement('option');
+      opt.textContent = 'No complete set';
+      opt.value = '';
+      selLang.appendChild(opt);
+      selLang.disabled = true;
+    }
+    tdLangs.appendChild(selLang);
+    tr.appendChild(tdLangs);
+
+    // Users dropdown (full set for selected language)
+    const tdUsers = document.createElement('td');
+    const selUser = document.createElement('select');
+    selUser.style.minWidth = '200px';
+
+    const refreshUsers = () => {
+      selUser.innerHTML = '';
+      if (selLang.disabled) {
+        const opt = document.createElement('option');
+        opt.textContent = 'No users';
+        opt.value = '';
+        selUser.appendChild(opt);
+        selUser.disabled = true;
+        return;
+      }
+      const users = fullUsersForExampleLang(ex, selLang.value);
+      if (!users.length) {
+        const opt = document.createElement('option');
+        opt.textContent = 'No users';
+        opt.value = '';
+        selUser.appendChild(opt);
+        selUser.disabled = true;
+        return;
+      }
+      selUser.disabled = false;
+      users.forEach(u => {
+        const opt = document.createElement('option');
+        opt.value = u;
+        opt.textContent = u;
+        selUser.appendChild(opt);
+      });
+    };
+    refreshUsers();
+    tdUsers.appendChild(selUser);
+    tr.appendChild(tdUsers);
+
+    // Behavior (wire to the *Record* inputs and table)
+    const applySelection = () => {
+      document.getElementById('label-search-input-d').value = ex.title || '';
+      document.getElementById('language-search-input-d').value = selLang.disabled ? '' : (selLang.value || '');
+      // (Optional) Track selected values for Step 2
+      currentLabel    = ex.title || '';
+      currentLanguage = selLang.disabled ? null : (selLang.value || null);
       fetchAndRenderTableD();
-    });
+    };
 
-    //Row added to table
+    tr.style.cursor = 'pointer';
+    tr.addEventListener('click', applySelection);
+    selLang.addEventListener('change', () => { refreshUsers(); applySelection(); });
+    selUser.addEventListener('change', applySelection); // shown for parity; TableD doesn’t filter by user
+
     tbody.appendChild(tr);
   });
 }
-
 
 async function refreshStep3FromSession() {
   //Only refreshes recording trascription table if in a session
