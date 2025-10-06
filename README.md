@@ -12,7 +12,7 @@ Link: https://earth-linguist.vercel.app/
 
 ## Features
 - Email/username login with Supabase
-- Tabs: **Introduction**, **Listen**, **Record**
+- Tabs: Introduction, Listen, Record
 - In-browser microphone recording (MediaRecorder)
 - Image grid with per-column audio playback + transcription view
 - Demo mode disables uploads for safe preview
