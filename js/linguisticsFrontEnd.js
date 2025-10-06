@@ -257,6 +257,30 @@ document.getElementById('login-btn').addEventListener('click', async () => {
   document.getElementById('username-signup').value = '';
 });
 
+// When pressing Enter in either login input, click "Log In"
+['identifier', 'password'].forEach((id) => {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      document.getElementById('login-btn').click();
+    }
+  });
+});
+
+// When pressing Enter in any sign-up input, click "Sign Up"
+['first-name', 'last-name', 'username-signup', 'email-signup', 'password-signup'].forEach((id) => {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      document.getElementById('signup-btn').click();
+    }
+  });
+});
+
 //If logout button clicked, supabase logs out user
 document.getElementById('logout-btn').addEventListener('click', async () => {
   await supabaseClient.auth.signOut();
@@ -1257,10 +1281,6 @@ document.getElementById('submit-recordings-btn').addEventListener('click', async
     pendingTranscriptions = {};
     document.querySelectorAll('#step-3 input[type="text"]').forEach(input => input.value = '');
 
-
-
-
-  
     //Clearing step 2 input values
     pendingRecordings = {};
     status.textContent = 'All recordings saved!';
