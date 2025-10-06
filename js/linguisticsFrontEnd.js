@@ -757,7 +757,6 @@ async function fetchAndRenderTableD() {
   const languageFilter = document.getElementById('language-search-input-d').value.trim();
   const wrap = document.getElementById('record-table-wrap');
 
-  // nothing selected → hide and clear
   if (!labelFilter) {
     wrap.classList.add('hidden');
     document.querySelector('#image-table-d thead tr').innerHTML = '';
@@ -765,7 +764,6 @@ async function fetchAndRenderTableD() {
     return;
   }
 
-  // 1) resolve example (same as Listen)
   const { data: ex, error: exErr } = await supabaseClient
     .from('example')
     .select('id, width, title')
@@ -779,7 +777,6 @@ async function fetchAndRenderTableD() {
     return;
   }
 
-  // 2) fetch images (same tables as Listen)
   const { data: images, error: imgErr } = await supabaseClient
     .from('image')
     .select('id, image_path, position')
@@ -787,80 +784,104 @@ async function fetchAndRenderTableD() {
     .order('position', { ascending: true });
   if (imgErr) { console.error('Error loading images (Step 2):', imgErr); return; }
 
-  // 3) fetch checkmarks (same tables as Listen)
   const { data: checks, error: ckErr } = await supabaseClient
     .from('checkmarks')
     .select('row_index, column_index')
     .eq('example_id', ex.id);
   if (ckErr) console.warn('Error loading checkmarks (Step 2):', ckErr);
 
-  // 4) columns = example width (fallback: number of images > 0 ? 1 : 0)
   const columnsCount = Number.isFinite(ex.width) && ex.width > 0 ? ex.width : (images?.length ? 1 : 0);
 
-  // 5) build header with "Record" buttons (NO fetch of audio here)
   wrap.classList.remove('hidden');
-  const theadRow = document.querySelector('#image-table-d thead tr');
+  const tableEl = document.getElementById('image-table-d');
+  const theadRow = tableEl.querySelector('thead tr');
   theadRow.innerHTML = '';
-  theadRow.insertAdjacentHTML('beforeend', '<th>Image</th>');
+
+  // lock layout + explicit widths
+  tableEl.style.tableLayout = 'fixed';
+  const IMAGE_COL_PX = 140;  // << adjust as you like
+  const COL_WIDTH_PX = 150;  // audio columns
+
+  // --- Header cells ---
+  const thImg = document.createElement('th');
+  thImg.textContent = 'Image';
+  thImg.style.width = IMAGE_COL_PX + 'px';
+  thImg.style.verticalAlign = 'middle';
+  thImg.style.padding = '8px';
+  theadRow.appendChild(thImg);
 
   for (let c = 1; c <= columnsCount; c++) {
     const th  = document.createElement('th');
-    const btn = document.createElement('button');
-    btn.textContent = 'Record';
-    btn.classList.add('custom-button');
+    th.style.width = COL_WIDTH_PX + 'px';
+    th.style.verticalAlign = 'middle';
+    th.style.padding = '8px';
+
+    const controls = document.createElement('div');
+    controls.style.display = 'flex';
+    controls.style.flexWrap = 'nowrap';
+    controls.style.justifyContent = 'center';
+    controls.style.alignItems = 'center';
+    controls.style.gap = '8px';
+    th.appendChild(controls);
+
+    const addPreviewPlayButton = (blob) => {
+      controls.querySelectorAll('.preview-play').forEach(el => el.remove());
+      const url = URL.createObjectURL(blob);
+      const playBtn = document.createElement('button');
+      playBtn.textContent = 'Play';
+      playBtn.classList.add('custom-button', 'preview-play');
+      playBtn.style.whiteSpace = 'nowrap';
+      playBtn.addEventListener('click', () => new Audio(url).play());
+      controls.appendChild(playBtn);
+    };
+
+    const recordBtn = document.createElement('button');
+    recordBtn.textContent = 'Record';
+    recordBtn.classList.add('custom-button');
+    recordBtn.style.whiteSpace = 'nowrap';
+    controls.appendChild(recordBtn);
 
     let mediaRecorder, chunks;
 
-    btn.addEventListener('click', async () => {
+    recordBtn.addEventListener('click', async () => {
       if (!mediaRecorder || mediaRecorder.state === 'inactive') {
-        // start recording for this column
-        delete pendingRecordings[`col-${c}`];      // clear any old
-        const oldPreview = th.querySelector('audio');
-        if (oldPreview) oldPreview.remove();
-
+        delete pendingRecordings[`col-${c}`];
+        controls.querySelectorAll('.preview-play').forEach(el => el.remove());
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
         mediaRecorder = new MediaRecorder(stream);
         chunks = [];
         mediaRecorder.ondataavailable = e => chunks.push(e.data);
         mediaRecorder.start();
-        btn.textContent = 'Stop';
+        recordBtn.textContent = 'Stop';
       } else {
-        // stop and save
         mediaRecorder.stop();
-        btn.textContent = 'Record';
+        recordBtn.textContent = 'Record';
         mediaRecorder.onstop = () => {
           const blob = new Blob(chunks, { type: 'audio/webm' });
-          pendingRecordings[`col-${c}`] = { blob, position: c }; // <-- position = column
-          const preview = document.createElement('audio');
-          preview.controls = true;
-          preview.src = URL.createObjectURL(blob);
-          th.appendChild(preview);
+          pendingRecordings[`col-${c}`] = { blob, position: c };
+          addPreviewPlayButton(blob);
         };
       }
     });
 
-    // restore preview if already recorded this column
     if (pendingRecordings[`col-${c}`]) {
       const { blob } = pendingRecordings[`col-${c}`];
-      const preview = document.createElement('audio');
-      preview.controls = true;
-      preview.src = URL.createObjectURL(blob);
-      th.appendChild(preview);
+      addPreviewPlayButton(blob);
     }
 
-    th.appendChild(btn);
     theadRow.appendChild(th);
   }
 
-  // 6) body: images + checkmarks (same logic as Listen)
+  // --- Body ---
   const tbody = document.querySelector('#image-table-d tbody');
   tbody.innerHTML = '';
 
   (images || []).forEach(img => {
     const tr = document.createElement('tr');
 
-    // image cell
     const tdImg = document.createElement('td');
+    tdImg.style.width = IMAGE_COL_PX + 'px'; // match header width
+    tdImg.style.textAlign = 'center';
     const el = document.createElement('img');
     el.src = img.image_path;
     el.alt = ex.title || '';
@@ -869,9 +890,10 @@ async function fetchAndRenderTableD() {
     tdImg.appendChild(el);
     tr.appendChild(tdImg);
 
-    // checkmarks for each column
     for (let c = 1; c <= columnsCount; c++) {
       const td = document.createElement('td');
+      td.style.width = COL_WIDTH_PX + 'px';
+      td.style.textAlign = 'center';
       const hasMark = (checks || []).some(k =>
         k.row_index === img.position && k.column_index === c
       );
@@ -898,161 +920,30 @@ async function fetchAndRenderExamplesTableD() {
     .order('created_at', { ascending: false });
   if (error) { console.error('Error fetching examples:', error); return; }
 
-  const ids = (examples || []).map(e => e.id);
-
-  // 2) Build example -> language -> user -> Set(positions) ONLY for VERIFIED sessions
-  const byExLangUser = new Map();
-  if (ids.length) {
-    const { data: auds, error: audErr } = await supabaseClient
-      .from('audio')
-      .select(`
-        position,
-        recording_session:recording_session!inner(example_id, language, "user", verification_status)
-      `)
-      .in('recording_session.example_id', ids)
-      .eq('recording_session.verification_status', true);
-    if (audErr) {
-      console.error('Error fetching audio/recording_session:', audErr);
-    } else {
-      for (const row of (auds || [])) {
-        const exId = row.recording_session?.example_id;
-        const lang = row.recording_session?.language;
-        const usr  = row.recording_session?.user;
-        const pos  = row.position;
-        if (!exId || !lang || !usr) continue;
-
-        let langMap = byExLangUser.get(exId);
-        if (!langMap) { langMap = new Map(); byExLangUser.set(exId, langMap); }
-
-        let userMap = langMap.get(lang);
-        if (!userMap) { userMap = new Map(); langMap.set(lang, userMap); }
-
-        let posSet = userMap.get(usr);
-        if (!posSet) { posSet = new Set(); userMap.set(usr, posSet); }
-
-        if (pos != null) posSet.add(pos);
-      }
-    }
-  }
-
-  // Helpers (same as Listen)
-  const hasFullSet = (posSet, need) => {
-    if (!need || need <= 0) return false;
-    for (let i = 1; i <= need; i++) if (!posSet.has(i)) return false;
-    return true;
-  };
-  const fullLanguagesForExample = (ex) => {
-    const need = ex.width && ex.width > 0 ? ex.width : null;
-    const langMap = byExLangUser.get(ex.id) || new Map();
-    const out = [];
-    for (const [lang, userMap] of langMap.entries()) {
-      const ok = Array.from(userMap.values()).some(posSet => hasFullSet(posSet, need));
-      if (ok) out.push(lang);
-    }
-    return out.sort();
-  };
-  const fullUsersForExampleLang = (ex, lang) => {
-    const need = ex.width && ex.width > 0 ? ex.width : null;
-    const langMap = byExLangUser.get(ex.id) || new Map();
-    const userMap = langMap.get(lang) || new Map();
-    const out = [];
-    for (const [usr, posSet] of userMap.entries()) {
-      if (hasFullSet(posSet, need)) out.push(usr);
-    }
-    return out.sort((a, b) => a.localeCompare(b));
-  };
-
-  // 3) Render into #examples-table-d with same columns as Listen
-  const thead = document.querySelector('#examples-table-d thead tr');
-  if (thead) thead.innerHTML = '<th>Title</th><th>Languages</th><th>User</th>';
-
   const tbody = document.querySelector('#examples-table-d tbody');
+  const thead = document.querySelector('#examples-table-d thead tr');
   tbody.innerHTML = '';
+  thead.innerHTML = '<th>Title</th>'; // only show the Title column
 
+  // just build the simple single-column table
   (examples || []).forEach(ex => {
-    // Skip examples with no verified audio
-    const langMap = byExLangUser.get(ex.id);
-    if (!langMap || !langMap.size) return;
-
-    const langsFull = fullLanguagesForExample(ex);
-
     const tr = document.createElement('tr');
 
-    // Title
+    // Title cell
     const tdTitle = document.createElement('td');
     tdTitle.textContent = ex.title || '';
     tr.appendChild(tdTitle);
 
-    // Languages dropdown
-    const tdLangs = document.createElement('td');
-    const selLang = document.createElement('select');
-    selLang.style.minWidth = '160px';
-    if (langsFull.length) {
-      langsFull.forEach(l => {
-        const opt = document.createElement('option');
-        opt.value = opt.textContent = l;
-        selLang.appendChild(opt);
-      });
-    } else {
-      const opt = document.createElement('option');
-      opt.textContent = 'No complete set';
-      opt.value = '';
-      selLang.appendChild(opt);
-      selLang.disabled = true;
-    }
-    tdLangs.appendChild(selLang);
-    tr.appendChild(tdLangs);
-
-    // Users dropdown (full set for selected language)
-    const tdUsers = document.createElement('td');
-    const selUser = document.createElement('select');
-    selUser.style.minWidth = '200px';
-
-    const refreshUsers = () => {
-      selUser.innerHTML = '';
-      if (selLang.disabled) {
-        const opt = document.createElement('option');
-        opt.textContent = 'No users';
-        opt.value = '';
-        selUser.appendChild(opt);
-        selUser.disabled = true;
-        return;
-      }
-      const users = fullUsersForExampleLang(ex, selLang.value);
-      if (!users.length) {
-        const opt = document.createElement('option');
-        opt.textContent = 'No users';
-        opt.value = '';
-        selUser.appendChild(opt);
-        selUser.disabled = true;
-        return;
-      }
-      selUser.disabled = false;
-      users.forEach(u => {
-        const opt = document.createElement('option');
-        opt.value = u;
-        opt.textContent = u;
-        selUser.appendChild(opt);
-      });
-    };
-    refreshUsers();
-    tdUsers.appendChild(selUser);
-    tr.appendChild(tdUsers);
-
-    // Behavior (wire to the *Record* inputs and table)
-    const applySelection = () => {
-      document.getElementById('label-search-input-d').value = ex.title || '';
-      document.getElementById('language-search-input-d').value = selLang.disabled ? '' : (selLang.value || '');
-      // (Optional) Track selected values for Step 2
-      currentLabel    = ex.title || '';
-      currentLanguage = selLang.disabled ? null : (selLang.value || null);
-      fetchAndRenderTableD();
-    };
-
+    // Clicking a row will apply selection and render step 2 table
     tr.style.cursor = 'pointer';
-    tr.addEventListener('click', applySelection);
-    selLang.addEventListener('change', () => { refreshUsers(); applySelection(); });
-    selUser.addEventListener('change', applySelection); // shown for parity; TableD doesn’t filter by user
+    tr.addEventListener('click', () => {
+      // When clicked, set filters for step 2
+      document.getElementById('label-search-input-d').value = ex.title || '';
+      document.getElementById('language-search-input-d').value = '';
+      currentLabel = ex.title || '';
+      currentLanguage = null;
+      fetchAndRenderTableD();
+    });
 
     tbody.appendChild(tr);
   });
