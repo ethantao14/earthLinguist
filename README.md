@@ -6,11 +6,11 @@ This project is an application that allows CMU students and linguists to learn l
 [Click to watch on YouTube](https://youtu.be/53BoHCis0iI)
 
 
-## Demo
-Link: https://earth-linguist.vercel.app/?demo=1
+## Demo (No Sign In)
+[Demo](https://earth-linguist.vercel.app/?demo=1)
 
 ## Public Version (Sign In)
-Link: https://earth-linguist.vercel.app/
+[EarthLinguist](https://earth-linguist.vercel.app/)
 
 ## Features
 - Email/username login with Supabase
