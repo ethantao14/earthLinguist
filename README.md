@@ -3,7 +3,8 @@
 This project is an application that allows CMU students and linguists to learn languages in a "Gavagai Experiment" fashion. This application is the primary application for 5+ CMU courses in the Department of Philosophy.
 
 ## Demo Video
-[![Demo Video]([https://www.youtube.com/watch?v=YOUR_VIDEO_ID](https://youtu.be/53BoHCis0iI))
+[Click to watch on YouTube](https://youtu.be/53BoHCis0iI)
+
 
 ## Demo
 Link: https://earth-linguist.vercel.app/?demo=1
