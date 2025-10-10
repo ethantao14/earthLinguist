@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+
+<!-- General Info -->
+<html lang="en">
+
+	<head>
+
+		<!-- General Info -->
+		<meta charset="utf-8">
+
+    	<!-- Tab Title -->
+    	<title>EarthLinguist Admin Side</title>
+    	
+    	<!-- General Info -->
+    	<meta name="author" content="Ethan Tao">
+		<meta name="description" content="Admin side of application to allow admins to have control over EarthLinguist.">
+    	
+		<!-- Supabase JS Library -->
+		<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+
+    	<!-- CSS + JS files -->
+    	<link href="css/linguisticsFrontEnd.css" rel="stylesheet" type="text/css">
+    	<script type="text/javascript" src="js/linguisticsFrontEnd.js" defer></script>
+
+	</head>
+
+
+	<body>
+  <!-- Auth -->
+  <div class="auth-wrapper">
+    <div class="auth-toggle" style="display:flex; gap:8px; margin-bottom:16px;">
+      <button id="login-page-btn" class="auth-toggle-button active" disabled>Log In</button>
+    </div>
+
+    <!-- Log in form -->
+    <div id="login-page" class="auth-page">
+      <input id="identifier" type="text" placeholder="Username or email" />
+      <input id="password" type="password" placeholder="Password" />
+      <button id="login-btn" class="custom-button">Log In</button>
+      <div id="auth-message"></div>
+    </div>
+  </div>
+
+  <!-- App UI (hidden unless logged in) -->
+  <div id="app-section" style="display:none;">
+    <h1>EarthLinguist Admin</h1>
+    <p>Welcome, <span id="welcome-name"></span>!</p>
+    <button id="logout-btn" class="custom-button">Log Out</button>
+
+    <div class="tabs">
+      <button class="tab-button active" id="tab1-btn">Create Example</button>
+      <button class="tab-button" id="tab2-btn">Approve Submissions</button>
+    </div>
+
+    <div id="tab1" class="tab-content active">
+  <h2>Create Example</h2>
+
+  <div class="wizard">
+    <!-- progress bar -->
+    <div class="progress-container">
+      <div id="progress-bar-admin" class="progress-bar"></div>
+    </div>
+
+    <!-- Step 1 -->
+    <div id="a-step-1" class="step active">
+      <h3>Step 1: Information</h3>
+
+      <label for="a-language">Language</label>
+      <input
+        id="a-language"
+        type="text"
+        placeholder="e.g., Icelandic"
+        style="margin-bottom:0.5rem; padding:0.5rem; width:100%;"
+      />
+
+      <label for="a-title">Title</label>
+      <input
+        id="a-title"
+        type="text"
+        placeholder="e.g., Chair Example"
+        style="margin-bottom:0.5rem; padding:0.5rem; width:100%;"
+      />
+
+      <label>Table Dimensions</label>
+      <div style="display:flex; gap:8px; margin-bottom:0.5rem;">
+        <input
+          id="a-rows"
+          type="number"
+          placeholder="Rows"
+          min="1"
+          style="padding:0.5rem; width:100%;"
+        />
+        <input
+          id="a-cols"
+          type="number"
+          placeholder="Columns"
+          min="1"
+          style="padding:0.5rem; width:100%;"
+        />
+      </div>
+    </div>
+
+    <!-- Step 2 -->
+    <div id="a-step-2" class="step">
+      <h3>Step 2: Upload Images and Audios + Checkmarks</h3>
+      <div id="a-grid-wrap" style="overflow-x:auto;">
+        <table id="a-grid-table">
+          <thead></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Step 3 -->
+<div id="a-step-3" class="step">
+  <h3>Step 3: Transcriptions</h3>
+  <div id="a-transcriptions"></div>
+</div>
+
+
+    <!-- navigation buttons -->
+    <div class="wizard-buttons">
+      <button id="a-prev-btn" class="custom-button">Previous</button>
+      <button id="a-next-btn" class="custom-button">Next</button>
+      <button id="a-submit-btn" class="custom-button" style="display:none">Create</button>
+    </div>
+    <p id="a-submit-status"></p>
+  </div>
+</div>
+
+
+
+
+    <div id="tab2" class="tab-content">
+      <h2>Approve Submissions</h2>
+    </div>
+  </div>
+</body>
+
+</html>
