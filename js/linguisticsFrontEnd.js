@@ -121,6 +121,8 @@ const supabaseClient  = createClient(SUPABASE_URL, SUPABASE_ANON_KEY); //Created
 //Uses either ?demo=1 or #demo in the URL
 const sp = new URLSearchParams(location.search);
 const DEMO_MODE = sp.has('demo') || location.hash.toLowerCase().includes('demo');
+//Temporarily close submissions on public app
+const SUBMISSIONS_CLOSED = true;
 
 
 //Toggle between login and signup: change active button and which page is visible
@@ -1192,6 +1194,12 @@ document.getElementById('submit-recordings-btn').addEventListener('click', async
   //Prevents submission in demo
   if (DEMO_MODE) {
     status.textContent = 'To submit, move to non-demo version linked on resume.';
+    return;
+  }
+
+  //Temporarily closing submissions
+  if (SUBMISSIONS_CLOSED) {
+    if (status) status.textContent = 'Submissions are currently closed.';
     return;
   }
 
