@@ -122,7 +122,7 @@ const supabaseClient  = createClient(SUPABASE_URL, SUPABASE_ANON_KEY); //Created
 const sp = new URLSearchParams(location.search);
 const DEMO_MODE = sp.has('demo') || location.hash.toLowerCase().includes('demo');
 //Temporarily close submissions on public app
-const SUBMISSIONS_CLOSED = true;
+const SUBMISSIONS_CLOSED = false;
 
 
 //Toggle between login and signup: change active button and which page is visible
@@ -1188,125 +1188,146 @@ document.getElementById('next-btn').addEventListener('click', () => {
 
 //Step 3 Submission
 document.getElementById('submit-recordings-btn').addEventListener('click', async () => {
-  //message to user
   const status = document.getElementById('submit-status');
 
-  //Prevents submission in demo
   if (DEMO_MODE) {
     status.textContent = 'To submit, move to non-demo version linked on resume.';
     return;
   }
 
-  //Temporarily closing submissions
-  if (SUBMISSIONS_CLOSED) {
-    if (status) status.textContent = 'Submissions are currently closed.';
+  // Step 1 input
+  const language = document.getElementById('record-language').value.trim();
+
+  if (!currentLabel) {
+    status.textContent = 'Pick an example in Step 2 first.';
     return;
   }
 
-  //Tells user submission is occuring
-  status.textContent = 'Uploading…';
-  
+  if (!language) {
+    status.textContent = 'Enter a language in Step 1.';
+    return;
+  }
 
-  //Reading step 1 values
-  const language = document.getElementById('record-language').value.trim();
-  const location = document.getElementById('record-location').value.trim();
+  if (!Object.keys(pendingRecordings).length) {
+    status.textContent = 'Record at least one clip.';
+    return;
+  }
 
-  //Inserting user, title, language, and location to supabase
-  //Returns session id
+  status.textContent = 'Preparing…';
+
+  // 1) Resolve example_id from example title
+  const { data: ex, error: exErr } = await supabaseClient
+    .from('example')
+    .select('id, title')
+    .eq('title', currentLabel)
+    .maybeSingle();
+
+  if (exErr || !ex) {
+    status.textContent = 'Could not find selected example.';
+    console.error(exErr);
+    return;
+  }
+
+  // 2) Build user string for recording_session.user
+  let userString = null;
+  {
+    const { data: prof } = await supabaseClient
+      .from('profiles')
+      .select('first_name, username, email')
+      .eq('id', currentUserId)
+      .maybeSingle();
+
+    userString =
+      prof?.first_name ||
+      prof?.username ||
+      prof?.email ||
+      'unknown';
+  }
+
+  // 3) Insert new row in recording_session
+  status.textContent = 'Creating session…';
+
   const { data: sessionRow, error: sessionErr } = await supabaseClient
-  .from('recording_sessions')
-  .insert([{
-    user_id:  currentUserId,
-    label:    currentLabel,
-    language,
-    location
-  }])
+    .from('recording_session')
+    .insert([{
+      example_id: ex.id,
+      language,
+      user: userString,
+      verification_status: false
+    }])
     .select('id')
     .single();
 
-  //Throws error if couldn't create session
   if (sessionErr) {
-    console.error('Could not create session:', sessionErr);
-    status.textContent = 'Error creating session';
+    status.textContent = sessionErr.message || 'Error creating session';
+    console.error('SESSION ERR', sessionErr);
     return;
   }
 
-  //Storing session id
-  currentSessionId = sessionRow.id;
+  const sessionId = sessionRow.id;
+  currentSessionId = sessionId;
 
-  //Clears out step 1 input values
-  document.getElementById('record-language').value = '';
-  document.getElementById('record-location').value = '';
-
+  // 4) Upload all clips + insert into audio
   try {
-    //Storing audio clips
+    status.textContent = 'Uploading clips…';
+
     for (const clipId in pendingRecordings) {
-    const { blob, position } = pendingRecordings[clipId];
-    const fileName = `${clipId}_${Date.now()}.webm`;
+      const { blob, position } = pendingRecordings[clipId];
 
-    //Uploading audio clips to supabase bucket
-    const { data: up, error: upErr } = await supabaseClient
-      .storage
-      .from('user-recordings')
-      .upload(fileName, blob);
+      // The file path MUST start with 'recordings' to satisfy your policy
+      const fileName = `recordings/${currentUserId}/${clipId}_${Date.now()}.webm`;
 
-    //Error catching
-    if (upErr) throw upErr;
+      // Upload to user-recordings bucket
+      const up = await supabaseClient.storage
+        .from('user-recordings')
+        .upload(fileName, blob, {
+          cacheControl: '3600',
+          upsert: false
+        });
 
-    //Getting url from bucket in supabase
-    const { data: urlData, error: urlErr } = await supabaseClient
-      .storage
-      .from('user-recordings')
-      .getPublicUrl(fileName);
+      if (up.error) throw up.error;
 
-    //Error catching and storing
-    if (urlErr) throw urlErr;
-    const publicUrl = urlData.publicUrl;
+      // Get public URL
+      const { data: pub, error: pubErr } = await supabaseClient
+        .storage
+        .from('user-recordings')
+        .getPublicUrl(fileName);
 
-    //Inserting information in supabase database
-    const id = crypto.randomUUID();
-    const transcription = pendingTranscriptions[clipId] || null;
-    const { error: dbErr } = await supabaseClient
-      .from('audio_clips')
-      .insert([{
-        id,
-        user_id:       currentUserId,
-        session_id:    currentSessionId,
-        label:         currentLabel,
-        language:      language, // from step 1
-        path:          publicUrl,
-        position:      position,
-        verified:      false,
-        transcription: transcription,
-        annotation:    null
-      }]);
+      if (pubErr) throw pubErr;
 
-    //Error catching
-    if (dbErr) throw dbErr;
+      const publicUrl = pub.publicUrl;
+      const transcription = pendingTranscriptions[clipId] || null;
+
+      // Insert row into audio
+      const { error: audioErr } = await supabaseClient
+        .from('audio')
+        .insert([{
+          recording_session_id: sessionId,
+          audio_path: publicUrl,
+          position,
+          transcription
+        }]);
+
+      if (audioErr) throw audioErr;
     }
 
-    //Clearing step 3 input values
+    // Clean caches
     pendingTranscriptions = {};
-    document.querySelectorAll('#step-3 input[type="text"]').forEach(input => input.value = '');
-
-    //Clearing step 2 input values
+    document.querySelectorAll('#step-3 input[type="text"]').forEach(i => i.value = '');
     pendingRecordings = {};
-    status.textContent = 'All recordings saved!';
 
-    //Refreshing table that displays selected example
-    fetchAndRenderTableD();
-
-    //Refresh step 3 based on step 2
+    status.textContent = '✅ All recordings saved!';
+    
     await refreshStep3FromSession();
 
-    //Stay on step 3
     currentStep = 3;
     showStep(3);
-  }
 
-  //Error catching
-  catch (err) {
+  } catch (err) {
     console.error(err);
     status.textContent = `Error: ${err.message}`;
+  } finally {
+    // Clear Step 1 inputs
+    document.getElementById('record-language').value = '';
   }
 });
