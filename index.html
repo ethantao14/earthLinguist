@@ -66,6 +66,7 @@
 				<button class="tab-button active" id="tab1-btn">Introduction</button>
 				<button class="tab-button" id="tab2-btn">Listen</button>
 				<button class="tab-button" id="tab3-btn">Record</button>
+				<button class="tab-button" id="tab4-btn">Create Example</button>
 			</div>
 
 			<!-- Tab 1 Content: Introduction Message -->
@@ -215,6 +216,60 @@
 					
 					<!-- Message To Indicate Submissions Status -->
 					<p id="submit-status"></p>
+				</div>
+			</div>
+
+			<!-- Tab 4 Content: Create Example (migrated from admin) -->
+			<div id="tab4" class="tab-content">
+				<h2>Create Example</h2>
+
+				<div class="wizard">
+					<!-- progress bar -->
+					<div class="progress-container">
+						<div id="progress-bar-admin" class="progress-bar"></div>
+					</div>
+
+					<!-- Step 1 -->
+					<div id="a-step-1" class="step active">
+						<h3>Step 1: Information</h3>
+
+						<label for="a-language">Language</label>
+						<input id="a-language" type="text" placeholder="e.g., Icelandic" style="margin-bottom:0.5rem; padding:0.5rem; width:100%;"/>
+						
+						<label for="a-title">Title</label>
+						<input id="a-title" type="text" placeholder="e.g., Chair Example" style="margin-bottom:0.5rem; padding:0.5rem; width:100%;"/>
+
+						<label>Table Dimensions</label>
+						<div style="display:flex; gap:8px; margin-bottom:0.5rem;">
+							<input id="a-rows" type="number" placeholder="Rows" min="1" style="padding:0.5rem; width:100%;"/>
+							<input id="a-cols" type="number" placeholder="Columns" min="1" style="padding:0.5rem; width:100%;"/>
+						</div>
+					</div>
+
+					<!-- Step 2 -->
+					<div id="a-step-2" class="step">
+						<h3>Step 2: Upload Images and Audios + Checkmarks</h3>
+						<div id="a-grid-wrap" style="overflow-x:auto;">
+							<table id="a-grid-table">
+								<thead></thead>
+								<tbody></tbody>
+							</table>
+						</div>
+					</div>
+
+					<!-- Step 3 -->
+					<div id="a-step-3" class="step">
+						<h3>Step 3: Transcriptions</h3>
+						<div id="a-transcriptions"></div>
+					</div>
+
+					<!-- navigation buttons -->
+					<div class="wizard-buttons">
+						<button id="a-prev-btn" class="custom-button">Previous</button>
+						<button id="a-next-btn" class="custom-button">Next</button>
+						<button id="a-submit-btn" class="custom-button" style="display:none">Create</button>
+					</div>
+					<p id="a-submit-status"></p>
 				</div>
 			</div>
 		</div>

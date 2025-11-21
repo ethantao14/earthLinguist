@@ -110,6 +110,10 @@ let currentLabel       = null; //String: the currently selected examples in tab 
 let currentLanguage    = null; //String: the language being used to filter in step 2 of tab 3. Should be removed when filtering method improves.
 let currentSessionId   = null; //String: the ID of the current submission session the user is doing in tab 3. Used in refreshStep3FromSession().
 let currentUserFilter = null; // UUID of the selected user (or null for "any")
+let currentFirstName = null;
+let currentRole = 'viewer';
+const ALL_TABS = ['tab1', 'tab2', 'tab3', 'tab4'];
+
 
 //Initialize Supabase client
 const { createClient } = supabase; //Destructuring supabase object
@@ -307,9 +311,12 @@ async function checkLoginStatus() {
   //gets fname and lname from the given user's profile as a single object
   const { data: profileData } = await supabaseClient
     .from('profiles')
-    .select('first_name, last_name')
+    .select('first_name, last_name, status')
     .eq('id', userId)
     .single();
+
+  currentFirstName = profileData?.first_name || null;
+  currentRole = profileData?.status || 'viewer';
 
   //checks if there is an element in auth-wrapper (safety check). If there is, they are made not visible.
   const authWrapper = document.querySelector('.auth-wrapper');
@@ -338,6 +345,10 @@ async function checkLoginStatus() {
   document.getElementById("subtabC-btn").addEventListener("click", function() {
     openNestedTab("subtabC", this, "tab2");
   });
+  document.getElementById("tab4-btn").addEventListener("click", function() {
+  openTab("tab4", this);
+  a_wireWizardOnce();
+  });
 
   //Updating UI with name. If profile data exists, it sets the welcome message text to include first and last name. If not, the email is used instead (ternary operator)
   const nameSpan = document.getElementById('welcome-name');
@@ -350,6 +361,11 @@ async function checkLoginStatus() {
   //Fetch tables for tab 2 subtab 2. The transcriptions table for tab 2 subtab 3 is also constructed via a function call inside of fetchAndRenderTable()
   fetchAndRenderTable();
   fetchAndRenderExamplesTable();
+
+  //Render Create Examples tab's wizard
+  a_wireWizardOnce();
+
+  applyRoleVisibility();
 }
 
 function bootDemo() {
@@ -375,10 +391,14 @@ function bootDemo() {
   document.getElementById("tab3-btn").addEventListener("click", function() { openTab("tab3", this); });
   document.getElementById("subtabB-btn").addEventListener("click", function() { openNestedTab("subtabB", this, "tab2"); });
   document.getElementById("subtabC-btn").addEventListener("click", function() { openNestedTab("subtabC", this, "tab2"); });
+  document.getElementById("tab4-btn").addEventListener("click", function() { openTab("tab4", this); a_wireWizardOnce();});
 
   //Fetch tables for tab 2 subtab 2. The transcriptions table for tab 2 subtab 3 is also constructed via a function call inside of fetchAndRenderTable()
   fetchAndRenderTable();
   fetchAndRenderExamplesTable();
+
+  currentRole = 'creator';
+  applyRoleVisibility();
 
   //starts the wizard process on tab 3 on step 1
   showStep(1);
@@ -939,23 +959,118 @@ async function fetchAndRenderTableD() {
 }
 
 async function fetchAndRenderExamplesTableD() {
-  // 1) Fetch examples (need width to define a "full set")
+  // 1) Fetch examples (same as Listen tab)
   const { data: examples, error } = await supabaseClient
     .from('example')
     .select('id, title, width, created_at')
     .order('created_at', { ascending: false });
-  if (error) { console.error('Error fetching examples:', error); return; }
+
+  if (error) {
+    console.error('Error fetching examples for Record tab:', error);
+    return;
+  }
+
+  if (!examples || !examples.length) {
+    const tbody = document.querySelector('#examples-table-d tbody');
+    const thead = document.querySelector('#examples-table-d thead tr');
+    if (thead) thead.innerHTML = '<th>Title</th>';
+    if (tbody) {
+      tbody.innerHTML = '';
+      const tr = document.createElement('tr');
+      const td = document.createElement('td');
+      td.textContent = 'No examples available.';
+      tr.appendChild(td);
+      tbody.appendChild(tr);
+    }
+    return;
+  }
+
+  const ids = examples.map(e => e.id);
+
+  // 2) Fetch VERIFIED audio joined to recording_session
+  const byExLangUser = new Map();
+
+  if (ids.length) {
+    const { data: auds, error: audErr } = await supabaseClient
+      .from('audio')
+      .select(`
+        position,
+        recording_session:recording_session!inner(example_id, language, "user", verification_status)
+      `)
+      .in('recording_session.example_id', ids)
+      .eq('recording_session.verification_status', true);
+
+    if (audErr) {
+      console.error('Error fetching audio/recording_session for Record tab:', audErr);
+    } else {
+      for (const row of (auds || [])) {
+        const exId = row.recording_session?.example_id;
+        const lang = row.recording_session?.language;
+        const usr  = row.recording_session?.user;
+        const pos  = row.position;
+        if (!exId || !lang || !usr) continue;
+
+        let langMap = byExLangUser.get(exId);
+        if (!langMap) { langMap = new Map(); byExLangUser.set(exId, langMap); }
+
+        let userMap = langMap.get(lang);
+        if (!userMap) { userMap = new Map(); langMap.set(lang, userMap); }
+
+        let posSet = userMap.get(usr);
+        if (!posSet) { posSet = new Set(); userMap.set(usr, posSet); }
+
+        if (pos != null) posSet.add(pos);
+      }
+    }
+  }
+
+  // Helper: does a Set contain positions 1..need ?
+  const hasFullSet = (posSet, need) => {
+    if (!need || need <= 0) return false;
+    for (let i = 1; i <= need; i++) {
+      if (!posSet.has(i)) return false;
+    }
+    return true;
+  };
+
+  // Languages with at least one user having a full set (same as Listen)
+  function fullLanguagesForExample(ex) {
+    const need = ex.width && ex.width > 0 ? ex.width : null;
+    const langMap = byExLangUser.get(ex.id) || new Map();
+    const out = [];
+    for (const [lang, userMap] of langMap.entries()) {
+      const ok = Array.from(userMap.values()).some(posSet => hasFullSet(posSet, need));
+      if (ok) out.push(lang);
+    }
+    return out.sort();
+  }
+
+  // 3) Keep ONLY examples that Listen would consider "valid"
+  const validExamples = (examples || []).filter(ex => {
+    const langsFull = fullLanguagesForExample(ex);
+    return langsFull.length > 0;
+  });
 
   const tbody = document.querySelector('#examples-table-d tbody');
   const thead = document.querySelector('#examples-table-d thead tr');
-  tbody.innerHTML = '';
-  thead.innerHTML = '<th>Title</th>'; // only show the Title column
 
-  // just build the simple single-column table
-  (examples || []).forEach(ex => {
+  if (thead) thead.innerHTML = '<th>Title</th>';
+  if (!tbody) return;
+  tbody.innerHTML = '';
+
+  if (!validExamples.length) {
+    const tr = document.createElement('tr');
+    const td = document.createElement('td');
+    td.textContent = 'No fully-verified examples available for recording yet.';
+    tr.appendChild(td);
+    tbody.appendChild(tr);
+    return;
+  }
+
+  // 4) Build simple single-column table of these valid examples
+  validExamples.forEach(ex => {
     const tr = document.createElement('tr');
 
-    // Title cell
     const tdTitle = document.createElement('td');
     tdTitle.textContent = ex.title || '';
     tr.appendChild(tdTitle);
@@ -963,7 +1078,6 @@ async function fetchAndRenderExamplesTableD() {
     // Clicking a row will apply selection and render step 2 table
     tr.style.cursor = 'pointer';
     tr.addEventListener('click', () => {
-      // When clicked, set filters for step 2
       document.getElementById('label-search-input-d').value = ex.title || '';
       document.getElementById('language-search-input-d').value = '';
       currentLabel = ex.title || '';
@@ -974,6 +1088,8 @@ async function fetchAndRenderExamplesTableD() {
     tbody.appendChild(tr);
   });
 }
+
+
 
 async function refreshStep3FromSession() {
   //Only refreshes recording trascription table if in a session
@@ -1079,22 +1195,37 @@ function renderRecordTranscriptionsTable(clips) {
 
 //Function to switch tabs
 function openTab(tabId, clickedButton) {
-  //Hide all tab contents
+  const btn = clickedButton || document.getElementById(`${tabId}-btn`);
+
+  // Prevent opening disallowed tabs
+  if (btn && btn.style.display === 'none') {
+    return;
+  }
+
+  // Hide all tab contents
   document.querySelectorAll('.tab-content').forEach(tab => {
     tab.classList.remove('active');
+    tab.style.display = 'none';
   });
 
-  //Remove 'active' class from all buttons
+  // Remove 'active' from all buttons
   document.querySelectorAll('.tab-button').forEach(button => {
     button.classList.remove('active');
   });
 
-  //Show the selected tab
-  document.getElementById(tabId).classList.add('active');
+  // Show the selected tab
+  const content = document.getElementById(tabId);
+  if (content) {
+    content.classList.add('active');
+    content.style.display = 'block';
+  }
 
-  //Highlight the clicked tab button
-  clickedButton.classList.add('active');
+  // Highlight the clicked tab button
+  if (btn) {
+    btn.classList.add('active');
+  }
 }
+
 
 //Function to switch nested tabs
 function openNestedTab(subTabId, clickedButton, parentTabId) {
@@ -1191,7 +1322,12 @@ document.getElementById('submit-recordings-btn').addEventListener('click', async
   const status = document.getElementById('submit-status');
 
   if (DEMO_MODE) {
-    status.textContent = 'To submit, move to non-demo version linked on resume.';
+    status.textContent = 'Submissions Not Allowed In Demo Version.';
+    return;
+  }
+
+  if (currentRole === 'viewer') {
+    status.textContent = 'Only recorders or creators can submit recordings.';
     return;
   }
 
@@ -1331,3 +1467,643 @@ document.getElementById('submit-recordings-btn').addEventListener('click', async
     document.getElementById('record-language').value = '';
   }
 });
+
+//===============================================Variables and functions relevant to "Create Example" Tab
+const a = {
+  exampleId: null,
+  recordingSessionId: null,
+  totalSteps: 3,
+  currentStep: 1,
+  state: {
+    language: '',
+    title: '',
+    rows: 0,
+    cols: 0,
+    gridRows: 0,   // rows + 1
+    gridCols: 0,   // cols + 1
+    // Uploads
+    images: {},    // { [r:number>=1]: { file: File, url: string } }   (left column)
+    audios: {},    // { [c:number>=1]: { file: File, url: string } }   (top row)
+    // Check toggles for inner cells
+    checks: new Set(), // Set of "r,c" for r>=1 && c>=1
+    // in a.state
+    transcriptions: {} // { [c:number>=1]: string }
+  }
+};
+
+// --- Step 1 helpers ---
+function a_collectStep1() {
+  const language = document.getElementById('a-language')?.value.trim() || '';
+  const title    = document.getElementById('a-title')?.value.trim() || '';
+  const rows     = parseInt(document.getElementById('a-rows')?.value, 10) || 0;
+  const cols     = parseInt(document.getElementById('a-cols')?.value, 10) || 0;
+  return { language, title, rows, cols };
+}
+
+function a_applyStep1ToState() {
+  const { language, title, rows, cols } = a_collectStep1();
+  a.state.language = language;
+  a.state.title    = title;
+  a.state.rows     = rows;
+  a.state.cols     = cols;
+
+  // ALWAYS +1 row and +1 column
+  a.state.gridRows = Math.max(1, rows) + 1;
+  a.state.gridCols = Math.max(1, cols) + 1;
+
+  // reset grid state when dimensions change
+  a.state.images = {};
+  a.state.audios = {};
+  a.state.checks.clear();
+  a.state.transcriptions = {};
+}
+
+// --- Grid rendering ---
+function a_renderCheckmark(td, key) {
+  td.innerHTML = '';
+  if (a.state.checks.has(key)) {
+    const span = document.createElement('span');
+    span.textContent = '✔';
+    span.style.fontSize = '18px';
+    span.style.display = 'inline-block';
+    td.appendChild(span);
+  }
+}
+
+function a_buildGrid() {
+  const table = document.getElementById('a-grid-table');
+  const thead = table.querySelector('thead');
+  const tbody = table.querySelector('tbody');
+  thead.innerHTML = '';
+  tbody.innerHTML = '';
+
+  // Header row (r = 0): top-left blank; c>=1 = audio upload + Play button
+  const hr = document.createElement('tr');
+  for (let c = 0; c < a.state.gridCols; c++) {
+    const th = document.createElement('th');
+
+    if (c > 0) {
+      // container
+      const wrap = document.createElement('div');
+      wrap.style.display = 'flex';
+      wrap.style.flexDirection = 'column';
+      wrap.style.gap = '6px';
+
+      // audio upload
+      const input = document.createElement('input');
+      input.type = 'file';
+      input.accept = 'audio/*';
+
+      // play button (like your first project)
+      const playBtn = document.createElement('button');
+      playBtn.textContent = 'Play';
+      playBtn.className = 'custom-button';
+      playBtn.disabled = !a.state.audios[c]?.url;
+
+      // show existing audio state if any
+      let audioUrl = a.state.audios[c]?.url || null;
+      input.addEventListener('change', (e) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        if (audioUrl) { try { URL.revokeObjectURL(audioUrl); } catch {} }
+        audioUrl = URL.createObjectURL(file);
+        a.state.audios[c] = { file, url: audioUrl };
+        playBtn.disabled = false;
+      });
+
+      playBtn.addEventListener('click', () => {
+        if (!a.state.audios[c]?.url) return;
+        new Audio(a.state.audios[c].url).play();
+      });
+
+      // label (optional)
+      const lbl = document.createElement('div');
+      lbl.textContent = `Col ${c}`;
+
+      wrap.appendChild(lbl);
+      wrap.appendChild(input);
+      wrap.appendChild(playBtn);
+      th.appendChild(wrap);
+    }
+
+    hr.appendChild(th);
+  }
+  thead.appendChild(hr);
+
+  // Body rows (r >= 1)
+  for (let r = 1; r < a.state.gridRows; r++) {
+    const tr = document.createElement('tr');
+
+    for (let c = 0; c < a.state.gridCols; c++) {
+      const td = document.createElement('td');
+
+      if (c === 0) {
+        // Left column image upload (except we never render the top-left here)
+        const wrap = document.createElement('div');
+        wrap.style.display = 'flex';
+        wrap.style.flexDirection = 'column';
+        wrap.style.gap = '6px';
+
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = 'image/*';
+        input.style.width = '100%';
+
+        const preview = document.createElement('img');
+        preview.style.width = '100px';
+        preview.style.height = 'auto';
+        preview.style.display = 'none';
+        preview.style.borderRadius = '6px';
+
+        // show existing state if any
+        if (a.state.images[r]?.url) {
+          preview.src = a.state.images[r].url;
+          preview.style.display = 'block';
+        }
+
+        input.addEventListener('change', (e) => {
+          const file = e.target.files?.[0];
+          if (!file) return;
+          if (a.state.images[r]?.url) {
+            try { URL.revokeObjectURL(a.state.images[r].url); } catch {}
+          }
+          const url = URL.createObjectURL(file);
+          a.state.images[r] = { file, url };
+          preview.src = url;
+          preview.style.display = 'block';
+        });
+
+        const lbl = document.createElement('div');
+        lbl.textContent = `Row ${r}`;
+
+        wrap.appendChild(lbl);
+        wrap.appendChild(input);
+        wrap.appendChild(preview);
+        td.appendChild(wrap);
+      } else {
+        // Inner cells: toggle checkmark
+        const key = `${r},${c}`;
+        td.style.cursor = 'pointer';
+        td.style.textAlign = 'center';
+        td.style.verticalAlign = 'middle';
+        a_renderCheckmark(td, key);
+
+        td.addEventListener('click', () => {
+          if (a.state.checks.has(key)) {
+            a.state.checks.delete(key);
+          } else {
+            a.state.checks.add(key);
+          }
+          a_renderCheckmark(td, key);
+        });
+      }
+
+      tr.appendChild(td);
+    }
+
+    tbody.appendChild(tr);
+  }
+}
+
+function a_renderTranscriptions() {
+  const wrap = document.getElementById('a-transcriptions');
+  if (!wrap) return;
+
+  // fresh table
+  wrap.innerHTML = '';
+  const tbl = document.createElement('table');
+  tbl.style.width = '100%';
+  tbl.style.borderCollapse = 'collapse';
+
+  const thead = tbl.createTHead();
+  const headerRow = thead.insertRow();
+
+  const thAudio = document.createElement('th');
+  thAudio.textContent = 'Audio';
+  thAudio.style.padding = '8px';
+  thAudio.style.border = '1px solid #A7A1C2';
+  headerRow.appendChild(thAudio);
+
+  const thInput = document.createElement('th');
+  thInput.textContent = 'Your Transcription';
+  thInput.style.padding = '8px';
+  thInput.style.border = '1px solid #A7A1C2';
+  headerRow.appendChild(thInput);
+
+  const tbody = document.createElement('tbody');
+
+  // One row per audio column (c = 1 .. gridCols-1)
+  for (let c = 1; c < a.state.gridCols; c++) {
+    // Only render if an audio exists (user may not upload all)
+    if (!a.state.audios[c]?.url) continue;
+
+    const tr = tbody.insertRow();
+
+    // left cell: Play button
+    const tdBtn = tr.insertCell();
+    tdBtn.style.border = '1px solid #A7A1C2';
+    tdBtn.style.padding = '8px';
+
+    const playBtn = document.createElement('button');
+    playBtn.textContent = 'Play';
+    playBtn.className = 'custom-button';
+    playBtn.addEventListener('click', () => {
+      const url = a.state.audios[c]?.url;
+      if (url) new Audio(url).play();
+    });
+    tdBtn.appendChild(playBtn);
+
+    // right cell: transcription input
+    const tdInp = tr.insertCell();
+    tdInp.style.border = '1px solid #A7A1C2';
+    tdInp.style.padding = '8px';
+
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.placeholder = 'Type sentence…';
+    input.style.width = '100%';
+
+    // restore if present
+    input.value = a.state.transcriptions[c] || '';
+    input.addEventListener('input', (e) => {
+      a.state.transcriptions[c] = e.target.value;
+    });
+
+    tdInp.appendChild(input);
+  }
+
+  tbl.appendChild(tbody);
+  wrap.appendChild(tbl);
+}
+
+// Make safe strings for bucket names / paths
+function slugify(s) {
+  return String(s || '')
+    .toLowerCase()
+    .replace(/['"]/g, '')
+    .replace(/[^a-z0-9]+/g, '-')   // non-alphanum -> "-"
+    .replace(/^-+|-+$/g, '')       // trim dashes
+    .slice(0, 80);
+}
+
+async function a_createExampleAndSessionFromStep1() {
+  const { language, title, rows, cols } = a_collectStep1();
+
+  // Insert EXAMPLE first
+  const { data: ex, error: exErr } = await supabaseClient
+    .from('example')
+    .insert([{
+      width: cols,
+      height: rows,
+      title,
+      user: currentFirstName,
+      // created_at: leave to DB default (now())
+      // id: leave to DB default (uuid gen)
+    }])
+    .select('id')
+    .single();
+
+  if (exErr) throw exErr;
+  const exampleId = ex.id;
+
+  // Insert RECORDING SESSION next
+  const { data: rs, error: rsErr } = await supabaseClient
+    .from('recording_session')
+    .insert([{
+      example_id: exampleId,
+      verification_status: true, // as requested
+      language,                   // from Step 1 input
+      user: currentFirstName,
+      // created_at: DB default
+      // id: DB default
+    }])
+    .select('id')
+    .single();
+
+  if (rsErr) {
+    // best-effort rollback of the example if session insert fails
+    await supabaseClient.from('example').delete().eq('id', exampleId);
+    throw rsErr;
+  }
+
+  // Save in state for later steps
+  a.state.exampleId = exampleId;
+  a.state.recordingSessionId = rs.id;
+
+  return { exampleId, recordingSessionId: rs.id };
+}
+
+function a_showStep(step) {
+  a.currentStep = step;
+
+  for (let i = 1; i <= a.totalSteps; i++) {
+    document.getElementById(`a-step-${i}`).classList.toggle('active', i === step);
+  }
+
+  const bar = document.getElementById('progress-bar-admin');
+  if (bar) bar.style.width = `${(step / a.totalSteps) * 100}%`;
+
+  const prevBtn   = document.getElementById('a-prev-btn');
+  const nextBtn   = document.getElementById('a-next-btn');
+  const submitBtn = document.getElementById('a-submit-btn');
+  const footer    = document.querySelector('#tab4 .wizard-buttons');
+
+  if (!prevBtn || !nextBtn || !submitBtn || !footer) return;
+
+  if (step === 1) {
+    prevBtn.style.display   = 'none';
+    nextBtn.style.display   = 'inline-block';
+    submitBtn.style.display = 'none';
+    footer.style.justifyContent = 'flex-end';
+  } else if (step === a.totalSteps) {
+  prevBtn.style.display   = 'inline-block';
+  nextBtn.style.display   = 'none';
+  submitBtn.style.display = 'inline-block';
+  footer.style.justifyContent = 'space-between';
+
+  // Make sure the transcription table is up to date whenever Step 3 is shown
+  a_renderTranscriptions();
+}
+ else {
+    prevBtn.style.display   = 'inline-block';
+    nextBtn.style.display   = 'inline-block';
+    submitBtn.style.display = 'none';
+    footer.style.justifyContent = 'space-between';
+  }
+}
+
+function a_wireWizardOnce() {
+  if (a._wired) return;
+  a._wired = true;
+
+  const prevBtn   = document.getElementById('a-prev-btn');
+  const nextBtn   = document.getElementById('a-next-btn');
+  const submitBtn = document.getElementById('a-submit-btn');
+
+  prevBtn?.addEventListener('click', () => {
+    if (a.currentStep > 1) a_showStep(a.currentStep - 1);
+  });
+
+  nextBtn?.addEventListener('click', async () => {
+  const statusEl = document.getElementById('a-submit-status');
+
+  if (currentRole !== 'creator') {
+    statusEl.textContent = 'Only creators can create examples.';
+    return;
+  }
+
+  // Leaving Step 1 → validate, persist to DB, then build grid
+  if (a.currentStep === 1) {
+    const { language, title, rows, cols } = a_collectStep1();
+    if (!language || !title || rows < 1 || cols < 1) {
+      statusEl.textContent = 'Please fill out Language, Title, Rows, and Columns (≥1).';
+      return;
+    }
+
+    // Update local state + grid sizes
+    a_applyStep1ToState();
+
+    if (DEMO_MODE) {
+      // DEMO: no DB write, just local state + grid
+      statusEl.textContent = 'Demo mode: example will not be saved to the database.';
+      a_buildGrid();
+    } 
+    else {
+      try {
+        statusEl.textContent = 'Creating draft in database…';
+        const { exampleId, recordingSessionId } = await a_createExampleAndSessionFromStep1();
+        statusEl.textContent =
+          `Draft created (example: ${exampleId.slice(0,8)}…, session: ${recordingSessionId.slice(0,8)}…).`;
+
+        a_buildGrid();
+      } 
+      catch (e) {
+        console.error('DB insert failed', e);
+        statusEl.textContent = 'Failed to create draft. Please try again.';
+        return;
+      }
+    }
+  }
+
+
+  // Advance one step
+  if (a.currentStep < a.totalSteps) {
+    a_showStep(a.currentStep + 1);
+    if (a.currentStep === 2) {
+      a_renderTranscriptions(); // keep your existing behavior
+    }
+  }
+});
+
+
+
+    submitBtn?.addEventListener('click', async () => {
+    const statusEl = document.getElementById('a-submit-status');
+
+    if (currentRole !== 'creator') {
+      statusEl.textContent = 'Only creators can create examples.';
+      return;
+    }
+
+    if (DEMO_MODE) {
+      statusEl.textContent = 'Submissions Not Allowed In Demo Version.';
+      return;
+    }
+
+    try {
+      console.log('#1');
+      statusEl.textContent = 'Saving checkmarks…';
+      const { inserted: chk } = await a_saveCheckmarks();
+
+
+      console.log('#2');
+
+      statusEl.textContent = `Saved ${chk} checkmark${chk === 1 ? '' : 's'}. Uploading images…`;
+      const { inserted: imgs } = await a_saveImages();
+
+      console.log('#3');
+
+      statusEl.textContent =
+        `Saved ${chk} checkmark${chk === 1 ? '' : 's'}, ${imgs} image${imgs === 1 ? '' : 's'}. Uploading audios…`;
+      const { inserted: auds } = await a_saveAudios();
+
+      console.log('#4');
+
+      statusEl.textContent =
+        `✅ Done — ${chk} check${chk === 1 ? '' : 's'}, ${imgs} image${imgs === 1 ? '' : 's'}, ${auds} audio${auds === 1 ? '' : 's'} saved.`;
+    } catch (e) {
+      console.error('Submit failed', e);
+      statusEl.textContent = `Failed: ${e?.message || 'Unknown error'}`;
+    }
+  });
+
+
+  // init
+  a_showStep(1);
+}
+
+async function a_saveCheckmarks() {
+  const exampleId = a.state.exampleId;
+  if (!exampleId) throw new Error('No exampleId in state — create Step 1 draft first.');
+
+  // Build insert rows from the Set of "r,c"
+  const rows = Array.from(a.state.checks).map((key) => {
+    const [r, c] = key.split(',').map((n) => parseInt(n, 10));
+    return {
+      example_id: exampleId,
+      row_index: r,       // already 1-based in your grid
+      column_index: c,    // already 1-based in your grid
+      // id & created_at come from DB defaults
+    };
+  });
+
+  if (rows.length === 0) return { inserted: 0 };
+
+  // Optional: replace existing checkmarks for this example on re-submit
+  // (comment this out if you ONLY ever insert once)
+  await supabaseClient.from('checkmarks').delete().eq('example_id', exampleId);
+
+  // Insert all rows (Supabase supports large batches; chunk if you expect thousands)
+  const { error } = await supabaseClient.from('checkmarks').insert(rows);
+  if (error) throw error;
+
+  return { inserted: rows.length };
+}
+
+async function a_saveImages() {
+  console.log('+++1');
+  const exampleId = a.state.exampleId;
+  if (!exampleId) throw new Error('No exampleId in state — create Step 1 first.');
+
+  const bucket = 'image';
+  const rows = [];
+
+  console.log('+++2');
+
+  for (const [rStr, obj] of Object.entries(a.state.images)) {
+    const r = parseInt(rStr, 10);
+    if (!obj?.file) continue;
+
+    const file = obj.file;
+
+    console.log('+++3');
+
+
+    // put all admin images under the subfolder "admin-images/"
+    // const path = `admin-images/${exampleId}/row-${r}-${Date.now()}-${slugify(file.name)}`;
+    //const path = `row-${r}-${Date.now()}-${slugify(file.name)}`;
+    const path = `admin-images/${exampleId}/row-${r}-${Date.now()}-${slugify(file.name)}`; //kyle's line
+
+
+    console.log('+++4', path);
+
+    const { error: upErr } = await supabaseClient.storage.from(bucket).upload(path, file, {
+      cacheControl: '3600',
+      upsert: true,
+      contentType: file.type || 'application/octet-stream',
+    });
+    if (upErr) throw upErr;
+
+    console.log('+++5', path);
+
+    const { data: pub } = supabaseClient.storage.from(bucket).getPublicUrl(path);
+    rows.push({ example_id: exampleId, image_path: pub.publicUrl, position: r });
+  }
+
+  if (!rows.length) return { inserted: 0 };
+  const { error } = await supabaseClient.from('image').insert(rows);
+  if (error) throw error;
+  return { inserted: rows.length, bucket };
+}
+
+async function a_saveAudios() {
+  const sessionId = a.state.recordingSessionId;
+  if (!sessionId) throw new Error('No recordingSessionId — create Step 1 first.');
+
+  const bucket = 'audio';
+  const rows = [];
+
+  for (const [cStr, obj] of Object.entries(a.state.audios)) {
+    const c = parseInt(cStr, 10);
+    if (!obj?.file) continue;
+
+    const file = obj.file;
+
+    // put all admin audios under the subfolder "admin-audios/"
+    const path = `admin-audios/${sessionId}/col-${c}-${Date.now()}-${slugify(file.name)}`;
+
+    const { error: upErr } = await supabaseClient.storage.from(bucket).upload(path, file, {
+      cacheControl: '3600',
+      upsert: true,
+      contentType: file.type || 'application/octet-stream',
+    });
+    if (upErr) throw upErr;
+
+    const { data: pub } = supabaseClient.storage.from(bucket).getPublicUrl(path);
+    rows.push({
+      recording_session_id: sessionId,
+      audio_path: pub.publicUrl,
+      position: c,
+      transcription: a.state.transcriptions[c] || null,
+    });
+  }
+
+  if (!rows.length) return { inserted: 0 };
+  const { error } = await supabaseClient.from('audio').insert(rows);
+  if (error) throw error;
+  return { inserted: rows.length, bucket };
+}
+
+//================================Security based on enum role
+
+function applyRoleVisibility() {
+  const role = currentRole || 'viewer';
+  console.log('applyRoleVisibility – active role:', role);
+
+  let allowedTabs;
+  if (role === 'creator') {
+    allowedTabs = ['tab1', 'tab2', 'tab3', 'tab4'];
+  } else if (role === 'recorder') {
+    allowedTabs = ['tab1', 'tab2', 'tab3'];
+  } else {
+    // default: viewer
+    allowedTabs = ['tab1', 'tab2'];
+  }
+
+  ALL_TABS.forEach((tabId) => {
+    const btn = document.getElementById(`${tabId}-btn`);
+    const content = document.getElementById(tabId);
+    const isAllowed = allowedTabs.includes(tabId);
+
+    if (btn) {
+      btn.style.display = isAllowed ? 'inline-block' : 'none';
+    }
+
+    if (content) {
+      // Remove active class if not allowed
+      if (!isAllowed) {
+        content.classList.remove('active');
+        content.style.display = 'none';
+      } else {
+        // We'll re-activate one allowed tab below
+        if (!content.classList.contains('active')) {
+          content.style.display = 'none';
+        }
+      }
+    }
+  });
+
+  // Ensure there is exactly one active, allowed tab
+  let activeAllowed = allowedTabs.find((tabId) => {
+    const content = document.getElementById(tabId);
+    return content && content.classList.contains('active');
+  });
+
+  if (!activeAllowed) {
+    // default to the first allowed tab
+    activeAllowed = allowedTabs[0];
+  }
+
+  const activeBtn = document.getElementById(`${activeAllowed}-btn`);
+  openTab(activeAllowed, activeBtn);
+}
