@@ -959,137 +959,59 @@ async function fetchAndRenderTableD() {
 }
 
 async function fetchAndRenderExamplesTableD() {
-  // 1) Fetch examples (same as Listen tab)
+  // 1) Fetch VERIFIED examples only
   const { data: examples, error } = await supabaseClient
     .from('example')
-    .select('id, title, width, created_at')
+    .select('id, title, verification_status')
+    .eq('verification_status', true)
     .order('created_at', { ascending: false });
+
+  const tbody = document.querySelector('#examples-table-d tbody');
+  const thead = document.querySelector('#examples-table-d thead tr');
 
   if (error) {
     console.error('Error fetching examples for Record tab:', error);
     return;
   }
 
-  if (!examples || !examples.length) {
-    const tbody = document.querySelector('#examples-table-d tbody');
-    const thead = document.querySelector('#examples-table-d thead tr');
-    if (thead) thead.innerHTML = '<th>Title</th>';
-    if (tbody) {
-      tbody.innerHTML = '';
-      const tr = document.createElement('tr');
-      const td = document.createElement('td');
-      td.textContent = 'No examples available.';
-      tr.appendChild(td);
-      tbody.appendChild(tr);
-    }
-    return;
-  }
-
-  const ids = examples.map(e => e.id);
-
-  // 2) Fetch VERIFIED audio joined to recording_session
-  const byExLangUser = new Map();
-
-  if (ids.length) {
-    const { data: auds, error: audErr } = await supabaseClient
-      .from('audio')
-      .select(`
-        position,
-        recording_session:recording_session!inner(example_id, language, "user", verification_status)
-      `)
-      .in('recording_session.example_id', ids)
-      .eq('recording_session.verification_status', true);
-
-    if (audErr) {
-      console.error('Error fetching audio/recording_session for Record tab:', audErr);
-    } else {
-      for (const row of (auds || [])) {
-        const exId = row.recording_session?.example_id;
-        const lang = row.recording_session?.language;
-        const usr  = row.recording_session?.user;
-        const pos  = row.position;
-        if (!exId || !lang || !usr) continue;
-
-        let langMap = byExLangUser.get(exId);
-        if (!langMap) { langMap = new Map(); byExLangUser.set(exId, langMap); }
-
-        let userMap = langMap.get(lang);
-        if (!userMap) { userMap = new Map(); langMap.set(lang, userMap); }
-
-        let posSet = userMap.get(usr);
-        if (!posSet) { posSet = new Set(); userMap.set(usr, posSet); }
-
-        if (pos != null) posSet.add(pos);
-      }
-    }
-  }
-
-  // Helper: does a Set contain positions 1..need ?
-  const hasFullSet = (posSet, need) => {
-    if (!need || need <= 0) return false;
-    for (let i = 1; i <= need; i++) {
-      if (!posSet.has(i)) return false;
-    }
-    return true;
-  };
-
-  // Languages with at least one user having a full set (same as Listen)
-  function fullLanguagesForExample(ex) {
-    const need = ex.width && ex.width > 0 ? ex.width : null;
-    const langMap = byExLangUser.get(ex.id) || new Map();
-    const out = [];
-    for (const [lang, userMap] of langMap.entries()) {
-      const ok = Array.from(userMap.values()).some(posSet => hasFullSet(posSet, need));
-      if (ok) out.push(lang);
-    }
-    return out.sort();
-  }
-
-  // 3) Keep ONLY examples that Listen would consider "valid"
-  const validExamples = (examples || []).filter(ex => {
-    const langsFull = fullLanguagesForExample(ex);
-    return langsFull.length > 0;
-  });
-
-  const tbody = document.querySelector('#examples-table-d tbody');
-  const thead = document.querySelector('#examples-table-d thead tr');
-
+  // Set table header
   if (thead) thead.innerHTML = '<th>Title</th>';
-  if (!tbody) return;
+
+  // Clear old rows
   tbody.innerHTML = '';
 
-  if (!validExamples.length) {
+  // If no verified examples
+  if (!examples || examples.length === 0) {
     const tr = document.createElement('tr');
     const td = document.createElement('td');
-    td.textContent = 'No fully-verified examples available for recording yet.';
+    td.textContent = 'No verified examples available.';
     tr.appendChild(td);
     tbody.appendChild(tr);
     return;
   }
 
-  // 4) Build simple single-column table of these valid examples
-  validExamples.forEach(ex => {
+  // 2) Render simple table: only verified examples
+  examples.forEach(ex => {
     const tr = document.createElement('tr');
+    const td = document.createElement('td');
 
-    const tdTitle = document.createElement('td');
-    tdTitle.textContent = ex.title || '';
-    tr.appendChild(tdTitle);
+    td.textContent = ex.title;
+    tr.appendChild(td);
 
-    // Clicking a row will apply selection and render step 2 table
+    // Clicking selects example
     tr.style.cursor = 'pointer';
     tr.addEventListener('click', () => {
-      document.getElementById('label-search-input-d').value = ex.title || '';
-      document.getElementById('language-search-input-d').value = '';
-      currentLabel = ex.title || '';
+      document.getElementById('label-search-input-d').value = ex.title;
+      currentLabel = ex.title;
       currentLanguage = null;
+
+      // This loads Step 2 recording table normally
       fetchAndRenderTableD();
     });
 
     tbody.appendChild(tr);
   });
 }
-
-
 
 async function refreshStep3FromSession() {
   //Only refreshes recording trascription table if in a session
@@ -1308,14 +1230,42 @@ document.getElementById('prev-btn').addEventListener('click', () => {
   if (currentStep > 1)
     showStep(--currentStep);
 });
-document.getElementById('next-btn').addEventListener('click', () => {
+document.getElementById('next-btn').addEventListener('click', async () => {
+  if (currentStep === 1) {
+    const language = document.getElementById('record-language').value.trim();
+    if (!language) {
+      alert('Please enter the language of your recording before continuing.');
+      return;
+    }
+  }
+  if (currentStep === 2) {
+    const labelFilter = document.getElementById('label-search-input-d').value.trim();
+
+    if (labelFilter) {
+      const { data: ex } = await supabaseClient
+        .from('example')
+        .select('width')
+        .eq('title', labelFilter)
+        .maybeSingle();
+
+      const requiredColumns = ex?.width || 0;
+
+      const recordedColumns = Object.values(pendingRecordings).map(r => r.position);
+      const uniqueRecorded = new Set(recordedColumns).size;
+
+      if (uniqueRecorded < requiredColumns) {
+        alert(`You must record audio for all ${requiredColumns} columns before continuing.`);
+        return;
+      }
+    }
+  }
+
   if (currentStep < totalSteps) {
     showStep(++currentStep);
-  } 
-  else {
-    alert('All done!');
   }
 });
+
+
 
 //Step 3 Submission
 document.getElementById('submit-recordings-btn').addEventListener('click', async () => {
