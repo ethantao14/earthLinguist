@@ -443,11 +443,17 @@ async function fetchAndRenderTable() {
   }
 
   // Resolve example PK by title
-  const { data: ex, error: exErr } = await supabaseClient
-    .from('example')
-    .select('id')
-    .eq('title', labelFilter)
-    .maybeSingle();
+  let exLookup = supabaseClient
+  .from('example')
+  .select('id')
+  .eq('title', labelFilter);
+
+  if (currentRole === 'student') {
+    exLookup = exLookup.eq('class_viewable', true);
+  }
+
+  const { data: ex, error: exErr } = await exLookup.maybeSingle();
+
   if (exErr) { console.error('Error loading example:', exErr); return; }
   if (!ex) {
     document.querySelector('#image-table thead tr').innerHTML = '<th>Image</th>';
@@ -560,10 +566,17 @@ async function fetchAndRenderTable() {
 // - Clicking a row or changing a dropdown sets filters + currentUserFilter, then loads the main table
 async function fetchAndRenderExamplesTable() {
   // 1) Fetch examples (need width to know how many positions a "full set" means)
-  const { data: examples, error } = await supabaseClient
-    .from('example')
-    .select('id, title, width, created_at')
-    .order('created_at', { ascending: false });
+  let exQuery = supabaseClient
+  .from('example')
+  .select('id, title, width, created_at')
+  .order('created_at', { ascending: false });
+
+  if (currentRole === 'student') {
+    exQuery = exQuery.eq('class_viewable', true);
+  }
+
+  const { data: examples, error } = await exQuery;
+
   if (error) { console.error('Error fetching examples:', error); return; }
 
   const ids = (examples || []).map(e => e.id);
@@ -1151,6 +1164,9 @@ function openTab(tabId, clickedButton) {
 
 //Function to switch nested tabs
 function openNestedTab(subTabId, clickedButton, parentTabId) {
+  // Students cannot access Listen -> Transcriptions
+  if (currentRole === 'student' && subTabId === 'subtabC') return;
+
   //Hide all nested tab contents inside the parent tab
   document.querySelectorAll(`#${parentTabId} .nested-tab-content`).forEach(tab => {
     tab.classList.remove('active');
@@ -1167,6 +1183,7 @@ function openNestedTab(subTabId, clickedButton, parentTabId) {
   //Highlight the clicked nested tab button
   clickedButton.classList.add('active');
 }
+
 
 //Recording Process
 const totalSteps = 3;
@@ -2056,4 +2073,18 @@ function applyRoleVisibility() {
 
   const activeBtn = document.getElementById(`${activeAllowed}-btn`);
   openTab(activeAllowed, activeBtn);
+
+  // Listen nested tabs visibility by role
+  const subtabBBtn = document.getElementById('subtabB-btn'); // Images
+  const subtabCBtn = document.getElementById('subtabC-btn'); // Transcriptions
+
+  if (role === 'student') {
+    if (subtabCBtn) subtabCBtn.style.display = 'none';
+    if (subtabBBtn) subtabBBtn.style.display = 'inline-block';
+    if (subtabBBtn) openNestedTab('subtabB', subtabBBtn, 'tab2'); // force Images
+  } else {
+    if (subtabCBtn) subtabCBtn.style.display = 'inline-block';
+    if (subtabBBtn) subtabBBtn.style.display = 'inline-block';
+  }
+
 }
