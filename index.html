@@ -67,6 +67,7 @@
 				<button class="tab-button" id="tab2-btn">Listen</button>
 				<button class="tab-button" id="tab3-btn">Record</button>
 				<button class="tab-button" id="tab4-btn">Create Example</button>
+				<button class="tab-button" id="tab5-btn">Approval</button>
 			</div>
 
 			<!-- Tab 1 Content: Introduction Message -->
@@ -270,6 +271,35 @@
 						<button id="a-submit-btn" class="custom-button" style="display:none">Create</button>
 					</div>
 					<p id="a-submit-status"></p>
+				</div>
+			</div>
+
+			<div id="tab5" class="tab-content">
+				<h2>Approval</h2>
+				<p>Select an unverified example, preview it, then approve it.</p>
+
+				<h3>Unverified Examples</h3>
+				<table id="approval-examples-table">
+					<thead>
+					<tr>
+						<th>Title</th>
+						<th>Created</th>
+					</tr>
+					</thead>
+					<tbody></tbody>
+				</table>
+
+				<div id="approval-table-wrap" class="hidden">
+					<h3>Selected Example</h3>
+					<table id="approval-image-table">
+					<thead><tr></tr></thead>
+					<tbody></tbody>
+					</table>
+				</div>
+
+				<div style="margin-top: 12px;">
+					<button id="approve-example-btn" class="custom-button" disabled>Approve Example</button>
+					<span id="approval-status" style="margin-left:8px;"></span>
 				</div>
 			</div>
 		</div>

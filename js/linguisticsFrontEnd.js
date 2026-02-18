@@ -112,7 +112,9 @@ let currentSessionId   = null; //String: the ID of the current submission sessio
 let currentUserFilter = null; // UUID of the selected user (or null for "any")
 let currentFirstName = null;
 let currentRole = 'viewer';
-const ALL_TABS = ['tab1', 'tab2', 'tab3', 'tab4'];
+let currentApprovalExampleId = null;
+const ALL_TABS = ['tab1', 'tab2', 'tab3', 'tab4', 'tab5'];
+
 
 
 //Initialize Supabase client
@@ -346,8 +348,12 @@ async function checkLoginStatus() {
     openNestedTab("subtabC", this, "tab2");
   });
   document.getElementById("tab4-btn").addEventListener("click", function() {
-  openTab("tab4", this);
-  a_wireWizardOnce();
+    openTab("tab4", this);
+    a_wireWizardOnce();
+  });
+  document.getElementById("tab5-btn").addEventListener("click", function() {
+    openTab("tab5", this);
+    fetchAndRenderApprovalExamplesTable();
   });
 
   //Updating UI with name. If profile data exists, it sets the welcome message text to include first and last name. If not, the email is used instead (ternary operator)
@@ -392,6 +398,7 @@ function bootDemo() {
   document.getElementById("subtabB-btn").addEventListener("click", function() { openNestedTab("subtabB", this, "tab2"); });
   document.getElementById("subtabC-btn").addEventListener("click", function() { openNestedTab("subtabC", this, "tab2"); });
   document.getElementById("tab4-btn").addEventListener("click", function() { openTab("tab4", this); a_wireWizardOnce();});
+  document.getElementById("tab5-btn").addEventListener("click", function() { openTab("tab5", this); fetchAndRenderApprovalExamplesTable();});
 
   //Fetch tables for tab 2 subtab 2. The transcriptions table for tab 2 subtab 3 is also constructed via a function call inside of fetchAndRenderTable()
   fetchAndRenderTable();
@@ -2021,6 +2028,187 @@ async function a_saveAudios() {
   return { inserted: rows.length, bucket };
 }
 
+async function fetchAndRenderApprovalExamplesTable() {
+  const tbody = document.querySelector('#approval-examples-table tbody');
+  const status = document.getElementById('approval-status');
+  const approveBtn = document.getElementById('approve-example-btn');
+
+  if (!tbody) return;
+  tbody.innerHTML = '';
+  if (status) status.textContent = '';
+  if (approveBtn) approveBtn.disabled = true;
+  currentApprovalExampleId = null;
+
+  const { data: examples, error } = await supabaseClient
+    .from('example')
+    .select('id, title, created_at')
+    .eq('verification_status', false)
+    .order('created_at', { ascending: false });
+
+  if (error) {
+    console.error('Error loading unverified examples:', error);
+    if (status) status.textContent = 'Failed to load unverified examples.';
+    return;
+  }
+
+  if (!examples || examples.length === 0) {
+    const tr = document.createElement('tr');
+    const td = document.createElement('td');
+    td.colSpan = 2;
+    td.textContent = 'No unverified examples.';
+    tr.appendChild(td);
+    tbody.appendChild(tr);
+    return;
+  }
+
+  examples.forEach(ex => {
+    const tr = document.createElement('tr');
+    tr.style.cursor = 'pointer';
+
+    const tdTitle = document.createElement('td');
+    tdTitle.textContent = ex.title || '';
+    tr.appendChild(tdTitle);
+
+    const tdCreated = document.createElement('td');
+    tdCreated.textContent = ex.created_at ? new Date(ex.created_at).toLocaleString() : '';
+    tr.appendChild(tdCreated);
+
+    tr.addEventListener('click', async () => {
+      currentApprovalExampleId = ex.id;
+      if (approveBtn) approveBtn.disabled = false;
+      await fetchAndRenderApprovalTable(ex.id);
+    });
+
+    tbody.appendChild(tr);
+  });
+}
+
+async function fetchAndRenderApprovalTable(exampleId) {
+  const wrap = document.getElementById('approval-table-wrap');
+  const theadRow = document.querySelector('#approval-image-table thead tr');
+  const tbody = document.querySelector('#approval-image-table tbody');
+
+  if (!wrap || !theadRow || !tbody) return;
+
+  // Audio columns via recording_session -> example
+  const { data: clips, error: clipsError } = await supabaseClient
+    .from('audio')
+    .select(`
+      id, audio_path, position,
+      recording_session:recording_session!inner(example_id)
+    `)
+    .eq('recording_session.example_id', exampleId)
+    .order('position', { ascending: true });
+
+  if (clipsError) {
+    console.error('Error loading approval audio:', clipsError);
+    return;
+  }
+
+  const { data: images, error: imgError } = await supabaseClient
+    .from('image')
+    .select('id, image_path, position')
+    .eq('example_id', exampleId)
+    .order('position', { ascending: true });
+
+  if (imgError) {
+    console.error('Error loading approval images:', imgError);
+    return;
+  }
+
+  const { data: checks, error: ckErr } = await supabaseClient
+    .from('checkmarks')
+    .select('row_index, column_index')
+    .eq('example_id', exampleId);
+
+  if (ckErr) console.error('Error loading approval checkmarks:', ckErr);
+
+  wrap.classList.remove('hidden');
+  theadRow.innerHTML = '<th>Image</th>';
+  tbody.innerHTML = '';
+
+  (clips || []).forEach(clip => {
+    const th = document.createElement('th');
+    const btn = document.createElement('button');
+    btn.textContent = 'Play';
+    btn.classList.add('custom-button');
+    btn.addEventListener('click', () => new Audio(clip.audio_path).play());
+    th.appendChild(btn);
+    theadRow.appendChild(th);
+  });
+
+  (images || []).forEach(img => {
+    const tr = document.createElement('tr');
+
+    const tdImg = document.createElement('td');
+    const imageEl = document.createElement('img');
+    imageEl.src = img.image_path;
+    imageEl.style.width = '100px';
+    imageEl.style.height = 'auto';
+    tdImg.appendChild(imageEl);
+    tr.appendChild(tdImg);
+
+    (clips || []).forEach((_, i) => {
+      const td = document.createElement('td');
+      const col = i + 1;
+      const hasMark = (checks || []).some(c => c.row_index === img.position && c.column_index === col);
+      if (hasMark) {
+        const mark = document.createElement('img');
+        mark.src = 'images/checkmark.png';
+        mark.alt = '✔';
+        mark.style.width = '20px';
+        mark.style.height = '20px';
+        td.appendChild(mark);
+      }
+      tr.appendChild(td);
+    });
+
+    tbody.appendChild(tr);
+  });
+}
+
+document.getElementById('approve-example-btn')?.addEventListener('click', async () => {
+  const status = document.getElementById('approval-status');
+  const wrap = document.getElementById('approval-table-wrap');
+  const thead = document.querySelector('#approval-image-table thead tr');
+  const tbody = document.querySelector('#approval-image-table tbody');
+  const btn = document.getElementById('approve-example-btn');
+
+  if (!currentApprovalExampleId) {
+    if (status) status.textContent = 'Select an example first.';
+    return;
+  }
+
+  if (status) status.textContent = 'Approving...';
+
+  const { error: exErr } = await supabaseClient
+    .from('example')
+    .update({ verification_status: true })
+    .eq('id', currentApprovalExampleId);
+
+  if (exErr) {
+    console.error('Failed to approve example:', exErr);
+    if (status) status.textContent = 'Failed to approve example.';
+    return;
+  }
+
+  await supabaseClient
+    .from('recording_session')
+    .update({ verification_status: true })
+    .eq('example_id', currentApprovalExampleId);
+
+  currentApprovalExampleId = null;
+  if (btn) btn.disabled = true;
+  if (wrap) wrap.classList.add('hidden');
+  if (thead) thead.innerHTML = '';
+  if (tbody) tbody.innerHTML = '';
+
+  if (status) status.textContent = 'Example approved.';
+  await fetchAndRenderApprovalExamplesTable();
+});
+
+
+
 //================================Security based on enum role
 
 function applyRoleVisibility() {
@@ -2029,7 +2217,7 @@ function applyRoleVisibility() {
 
   let allowedTabs;
   if (role === 'creator') {
-    allowedTabs = ['tab1', 'tab2', 'tab3', 'tab4'];
+    allowedTabs = ['tab1', 'tab2', 'tab3', 'tab4', 'tab5'];
   } else if (role === 'recorder') {
     allowedTabs = ['tab1', 'tab2', 'tab3'];
   } else {
