@@ -129,6 +129,14 @@ const sp = new URLSearchParams(location.search);
 const DEMO_MODE = sp.has('demo') || location.hash.toLowerCase().includes('demo');
 //Temporarily close submissions on public app
 const SUBMISSIONS_CLOSED = false;
+const DEFAULT_SIGNUP_ROLE = 'viewer';
+const inviteRole = (sp.get('invite_role') || '').toLowerCase();
+const signupRole = inviteRole === 'student' ? 'student' : DEFAULT_SIGNUP_ROLE;
+const isStudentInvite = signupRole === 'student';
+const signupVariantTitle = document.getElementById('signup-variant-title');
+if (signupVariantTitle) {
+  signupVariantTitle.style.display = isStudentInvite ? 'block' : 'none';
+}
 
 
 //Toggle between login and signup: change active button and which page is visible
@@ -184,7 +192,8 @@ document.getElementById('signup-btn').addEventListener('click', async () => {
       first_name: firstName,
       last_name: lastName,
       username: username,
-      email: email
+      email: email,
+      status: signupRole
     }]);
 
     //if there is an error, an error is thrown to the console. If it was because the username is taken, the UI indicates so. 
@@ -881,10 +890,12 @@ async function fetchAndRenderTableD() {
     th.style.width = COL_WIDTH_PX + 'px';
     th.style.verticalAlign = 'middle';
     th.style.padding = '8px';
+    const isCreator = currentRole === 'creator';
 
     const controls = document.createElement('div');
     controls.style.display = 'flex';
     controls.style.flexWrap = 'nowrap';
+    controls.style.flexDirection = isCreator ? 'column' : 'row';
     controls.style.justifyContent = 'center';
     controls.style.alignItems = 'center';
     controls.style.gap = '8px';
@@ -905,9 +916,44 @@ async function fetchAndRenderTableD() {
     recordBtn.textContent = 'Record';
     recordBtn.classList.add('custom-button');
     recordBtn.style.whiteSpace = 'nowrap';
-    controls.appendChild(recordBtn);
 
     let mediaRecorder, chunks;
+
+    if (isCreator) {
+      const uploadBtn = document.createElement('button');
+      uploadBtn.textContent = 'Upload';
+      uploadBtn.classList.add('custom-button');
+      uploadBtn.style.whiteSpace = 'nowrap';
+
+      const fileInput = document.createElement('input');
+      fileInput.type = 'file';
+      fileInput.accept = 'audio/*';
+      fileInput.style.display = 'none';
+
+      uploadBtn.addEventListener('click', () => {
+        if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+          alert('Stop recording before uploading.');
+          return;
+        }
+        fileInput.click();
+      });
+
+      fileInput.addEventListener('change', () => {
+        const file = fileInput.files?.[0];
+        if (!file) return;
+
+        delete pendingRecordings[`col-${c}`];
+        controls.querySelectorAll('.preview-play').forEach(el => el.remove());
+        pendingRecordings[`col-${c}`] = { blob: file, position: c };
+        addPreviewPlayButton(file);
+        fileInput.value = '';
+      });
+
+      controls.appendChild(uploadBtn);
+      controls.appendChild(fileInput);
+    }
+
+    controls.appendChild(recordBtn);
 
     recordBtn.addEventListener('click', async () => {
       if (!mediaRecorder || mediaRecorder.state === 'inactive') {
@@ -1278,7 +1324,7 @@ document.getElementById('next-btn').addEventListener('click', async () => {
       const uniqueRecorded = new Set(recordedColumns).size;
 
       if (uniqueRecorded < requiredColumns) {
-        alert(`You must record audio for all ${requiredColumns} columns before continuing.`);
+        alert(`You must provide audio for all ${requiredColumns} columns before continuing.`);
         return;
       }
     }
@@ -1319,7 +1365,7 @@ document.getElementById('submit-recordings-btn').addEventListener('click', async
   }
 
   if (!Object.keys(pendingRecordings).length) {
-    status.textContent = 'Record at least one clip.';
+    status.textContent = 'Record or upload at least one clip.';
     return;
   }
 
@@ -1383,9 +1429,20 @@ document.getElementById('submit-recordings-btn').addEventListener('click', async
 
     for (const clipId in pendingRecordings) {
       const { blob, position } = pendingRecordings[clipId];
+      const mime = String(blob?.type || '').toLowerCase();
+      const extFromMime =
+        mime.includes('wav') ? 'wav' :
+        mime.includes('mpeg') || mime.includes('mp3') ? 'mp3' :
+        mime.includes('ogg') ? 'ogg' :
+        mime.includes('aac') ? 'aac' :
+        mime.includes('mp4') || mime.includes('m4a') ? 'm4a' :
+        'webm';
+      const fileNameExt = blob?.name && String(blob.name).includes('.')
+        ? String(blob.name).split('.').pop().toLowerCase()
+        : extFromMime;
 
       // The file path MUST start with 'recordings' to satisfy your policy
-      const fileName = `recordings/${currentUserId}/${clipId}_${Date.now()}.webm`;
+      const fileName = `recordings/${currentUserId}/${clipId}_${Date.now()}.${fileNameExt}`;
 
       // Upload to user-recordings bucket
       const up = await supabaseClient.storage
