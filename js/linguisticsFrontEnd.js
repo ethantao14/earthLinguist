@@ -113,7 +113,15 @@ let currentUserFilter = null; // UUID of the selected user (or null for "any")
 let currentFirstName = null;
 let currentRole = 'viewer';
 let currentApprovalExampleId = null;
-const ALL_TABS = ['tab1', 'tab2', 'tab3', 'tab4', 'tab5'];
+let currentListenExampleId = null;
+let currentRecordExampleId = null;
+let currentRecordingApprovalExampleId = null;
+let currentRecordingApprovalSessionId = null;
+let currentRecordingApprovalSessions = [];
+let currentClassViewableExampleId = null;
+let currentClassViewableExamples = [];
+let approvalMode = 'approve'; // 'approve' | 'unapprove'
+const ALL_TABS = ['tab1', 'tab2', 'tab3', 'tab4', 'tab5', 'tab6', 'tab7'];
 
 
 
@@ -362,7 +370,15 @@ async function checkLoginStatus() {
   });
   document.getElementById("tab5-btn").addEventListener("click", function() {
     openTab("tab5", this);
-    fetchAndRenderApprovalExamplesTable();
+    renderApprovalModeUI();
+  });
+  document.getElementById("tab6-btn").addEventListener("click", function() {
+    openTab("tab6", this);
+    fetchAndRenderRecordingApprovalExamplesTable();
+  });
+  document.getElementById("tab7-btn").addEventListener("click", function() {
+    openTab("tab7", this);
+    fetchAndRenderClassViewableExamplesTable();
   });
 
   //Updating UI with name. If profile data exists, it sets the welcome message text to include first and last name. If not, the email is used instead (ternary operator)
@@ -407,7 +423,9 @@ function bootDemo() {
   document.getElementById("subtabB-btn").addEventListener("click", function() { openNestedTab("subtabB", this, "tab2"); });
   document.getElementById("subtabC-btn").addEventListener("click", function() { openNestedTab("subtabC", this, "tab2"); });
   document.getElementById("tab4-btn").addEventListener("click", function() { openTab("tab4", this); a_wireWizardOnce();});
-  document.getElementById("tab5-btn").addEventListener("click", function() { openTab("tab5", this); fetchAndRenderApprovalExamplesTable();});
+  document.getElementById("tab5-btn").addEventListener("click", function() { openTab("tab5", this); renderApprovalModeUI();});
+  document.getElementById("tab6-btn").addEventListener("click", function() { openTab("tab6", this); fetchAndRenderRecordingApprovalExamplesTable();});
+  document.getElementById("tab7-btn").addEventListener("click", function() { openTab("tab7", this); fetchAndRenderClassViewableExamplesTable();});
 
   //Fetch tables for tab 2 subtab 2. The transcriptions table for tab 2 subtab 3 is also constructed via a function call inside of fetchAndRenderTable()
   fetchAndRenderTable();
@@ -432,13 +450,19 @@ document.addEventListener('DOMContentLoaded', () => {
 //refetching the top table displaying the selected example everytime the filters are changed for tab 2 subtab 2
 const langInput = document.getElementById('language-search-input');
 const labelInput = document.getElementById('label-search-input');
-labelInput.addEventListener('input', () => fetchAndRenderTable());
+labelInput.addEventListener('input', () => {
+  currentListenExampleId = null;
+  fetchAndRenderTable();
+});
 langInput.addEventListener('input',  () => fetchAndRenderTable());
 
 //refetching the top table displaying the selected example everytime the filters are changed for tab 3 step 2
 const langInputD  = document.getElementById('language-search-input-d');
 const labelInputD = document.getElementById('label-search-input-d');
-labelInputD.addEventListener('input', fetchAndRenderTableD);
+labelInputD.addEventListener('input', () => {
+  currentRecordExampleId = null;
+  fetchAndRenderTableD();
+});
 langInputD.addEventListener('input',  fetchAndRenderTableD);
 
 // Build the "Listen" table for a single example (images + audio columns + checkmarks)
@@ -458,20 +482,28 @@ async function fetchAndRenderTable() {
     return;
   }
 
-  // Resolve example PK by title
-  let exLookup = supabaseClient
-  .from('example')
-  .select('id')
-  .eq('title', labelFilter);
+  let exampleId = currentListenExampleId;
 
-  if (currentRole === 'student') {
-    exLookup = exLookup.eq('class_viewable', true);
+  // Fallback when an ID is not currently selected (e.g. user manually typed label):
+  // choose the latest matching title instead of requiring exactly one row.
+  if (!exampleId) {
+    let exLookup = supabaseClient
+      .from('example')
+      .select('id')
+      .eq('title', labelFilter)
+      .order('created_at', { ascending: false })
+      .limit(1);
+
+    if (currentRole === 'student') {
+      exLookup = exLookup.eq('class_viewable', true);
+    }
+
+    const { data: exRows, error: exErr } = await exLookup;
+    if (exErr) { console.error('Error loading example:', exErr); return; }
+    exampleId = exRows?.[0]?.id || null;
   }
 
-  const { data: ex, error: exErr } = await exLookup.maybeSingle();
-
-  if (exErr) { console.error('Error loading example:', exErr); return; }
-  if (!ex) {
+  if (!exampleId) {
     document.querySelector('#image-table thead tr').innerHTML = '<th>Image</th>';
     document.querySelector('#image-table tbody').innerHTML = '';
     document.getElementById('subtabC').innerHTML = '';
@@ -487,7 +519,7 @@ async function fetchAndRenderTable() {
       id, audio_path, transcription, position,
       recording_session:recording_session!inner(example_id, language, "user", verification_status)
     `)
-    .eq('recording_session.example_id', ex.id)
+    .eq('recording_session.example_id', exampleId)
     .eq('recording_session.language', languageFilter)
     .eq('recording_session.verification_status', true)
     .order('position', { ascending: true });
@@ -523,7 +555,7 @@ async function fetchAndRenderTable() {
   const { data: images, error: imgError } = await supabaseClient
     .from('image')
     .select('id, image_path, position')
-    .eq('example_id', ex.id)
+    .eq('example_id', exampleId)
     .order('position', { ascending: true });
   if (imgError) { console.error('Error loading images:', imgError); return; }
 
@@ -531,7 +563,7 @@ async function fetchAndRenderTable() {
   const { data: checks, error: ckErr } = await supabaseClient
     .from('checkmarks')
     .select('row_index, column_index')
-    .eq('example_id', ex.id);
+    .eq('example_id', exampleId);
   if (ckErr) { console.error('Error loading checkmarks:', ckErr); }
 
   // Build body
@@ -746,6 +778,7 @@ async function fetchAndRenderExamplesTable() {
     // Clicking row → set filters (title + language + user) and load
     tr.style.cursor = 'pointer';
     tr.addEventListener('click', () => {
+      currentListenExampleId = ex.id;
       document.getElementById('label-search-input').value = ex.title || '';
       document.getElementById('language-search-input').value = selLang.disabled ? '' : (selLang.value || '');
       currentUserFilter = selUser.disabled ? null : (selUser.value || null); // this is the string "user"
@@ -754,6 +787,7 @@ async function fetchAndRenderExamplesTable() {
 
     // Changing language → repopulate users and reload
     selLang.addEventListener('change', () => {
+      currentListenExampleId = ex.id;
       refreshUsers();
       document.getElementById('label-search-input').value = ex.title || '';
       document.getElementById('language-search-input').value = selLang.value || '';
@@ -763,6 +797,7 @@ async function fetchAndRenderExamplesTable() {
 
     // Changing user → reload for that user
     selUser.addEventListener('change', () => {
+      currentListenExampleId = ex.id;
       document.getElementById('label-search-input').value = ex.title || '';
       document.getElementById('language-search-input').value = selLang.value || '';
       currentUserFilter = selUser.disabled ? null : (selUser.value || null);
@@ -839,13 +874,33 @@ async function fetchAndRenderTableD() {
     return;
   }
 
-  const { data: ex, error: exErr } = await supabaseClient
-    .from('example')
-    .select('id, width, title')
-    .eq('title', labelFilter)
-    .maybeSingle();
-  if (exErr || !ex) {
-    console.error('Could not load example for Step 2:', exErr || 'not found');
+  let ex = null;
+  if (currentRecordExampleId) {
+    const { data, error: exErr } = await supabaseClient
+      .from('example')
+      .select('id, width, title')
+      .eq('id', currentRecordExampleId)
+      .maybeSingle();
+    if (exErr) {
+      console.error('Could not load example for Step 2:', exErr);
+    }
+    ex = data || null;
+  } else {
+    const { data: rows, error: exErr } = await supabaseClient
+      .from('example')
+      .select('id, width, title')
+      .eq('title', labelFilter)
+      .order('created_at', { ascending: false })
+      .limit(1);
+    if (exErr) {
+      console.error('Could not load example for Step 2:', exErr);
+    }
+    ex = rows?.[0] || null;
+    if (ex) currentRecordExampleId = ex.id;
+  }
+
+  if (!ex) {
+    console.error('Could not load example for Step 2: not found');
     wrap.classList.add('hidden');
     document.querySelector('#image-table-d thead tr').innerHTML = '';
     document.querySelector('#image-table-d tbody').innerHTML = '';
@@ -1068,6 +1123,7 @@ async function fetchAndRenderExamplesTableD() {
     tr.style.cursor = 'pointer';
     tr.addEventListener('click', () => {
       document.getElementById('label-search-input-d').value = ex.title;
+      currentRecordExampleId = ex.id;
       currentLabel = ex.title;
       currentLanguage = null;
 
@@ -1309,15 +1365,29 @@ document.getElementById('next-btn').addEventListener('click', async () => {
     }
   }
   if (currentStep === 2) {
-    const labelFilter = document.getElementById('label-search-input-d').value.trim();
-
-    if (labelFilter) {
-      const { data: ex } = await supabaseClient
+    let ex = null;
+    if (currentRecordExampleId) {
+      const { data } = await supabaseClient
         .from('example')
         .select('width')
-        .eq('title', labelFilter)
+        .eq('id', currentRecordExampleId)
         .maybeSingle();
+      ex = data || null;
+    } else {
+      const labelFilter = document.getElementById('label-search-input-d').value.trim();
+      if (labelFilter) {
+        const { data: rows } = await supabaseClient
+          .from('example')
+          .select('id, width')
+          .eq('title', labelFilter)
+          .order('created_at', { ascending: false })
+          .limit(1);
+        ex = rows?.[0] || null;
+        if (ex?.id) currentRecordExampleId = ex.id;
+      }
+    }
 
+    if (ex) {
       const requiredColumns = ex?.width || 0;
 
       const recordedColumns = Object.values(pendingRecordings).map(r => r.position);
@@ -1354,7 +1424,7 @@ document.getElementById('submit-recordings-btn').addEventListener('click', async
   // Step 1 input
   const language = document.getElementById('record-language').value.trim();
 
-  if (!currentLabel) {
+  if (!currentRecordExampleId && !currentLabel) {
     status.textContent = 'Pick an example in Step 2 first.';
     return;
   }
@@ -1371,12 +1441,28 @@ document.getElementById('submit-recordings-btn').addEventListener('click', async
 
   status.textContent = 'Preparing…';
 
-  // 1) Resolve example_id from example title
-  const { data: ex, error: exErr } = await supabaseClient
-    .from('example')
-    .select('id, title')
-    .eq('title', currentLabel)
-    .maybeSingle();
+  // 1) Resolve example_id from selection (ID-first, title fallback)
+  let ex = null;
+  let exErr = null;
+  if (currentRecordExampleId) {
+    const res = await supabaseClient
+      .from('example')
+      .select('id, title')
+      .eq('id', currentRecordExampleId)
+      .maybeSingle();
+    ex = res.data || null;
+    exErr = res.error || null;
+  } else {
+    const res = await supabaseClient
+      .from('example')
+      .select('id, title')
+      .eq('title', currentLabel)
+      .order('created_at', { ascending: false })
+      .limit(1);
+    ex = res.data?.[0] || null;
+    exErr = res.error || null;
+    if (ex?.id) currentRecordExampleId = ex.id;
+  }
 
   if (exErr || !ex) {
     status.textContent = 'Could not find selected example.';
@@ -1886,8 +1972,8 @@ function a_wireWizardOnce() {
   // Leaving Step 1 → validate, persist to DB, then build grid
   if (a.currentStep === 1) {
     const { language, title, rows, cols } = a_collectStep1();
-    if (!language || !title || rows < 1 || cols < 1) {
-      statusEl.textContent = 'Please fill out Language, Title, Rows, and Columns (≥1).';
+    if (!title || rows < 1 || cols < 1) {
+      statusEl.textContent = 'Please fill out Title, Rows, and Columns (≥1).';
       return;
     }
 
@@ -2096,10 +2182,12 @@ async function fetchAndRenderApprovalExamplesTable() {
   if (approveBtn) approveBtn.disabled = true;
   currentApprovalExampleId = null;
 
+  const shouldBeVerified = approvalMode === 'unapprove';
+
   const { data: examples, error } = await supabaseClient
     .from('example')
     .select('id, title, created_at')
-    .eq('verification_status', false)
+    .eq('verification_status', shouldBeVerified)
     .order('created_at', { ascending: false });
 
   if (error) {
@@ -2112,7 +2200,9 @@ async function fetchAndRenderApprovalExamplesTable() {
     const tr = document.createElement('tr');
     const td = document.createElement('td');
     td.colSpan = 2;
-    td.textContent = 'No unverified examples.';
+    td.textContent = approvalMode === 'approve'
+      ? 'No unverified examples.'
+      : 'No verified examples.';
     tr.appendChild(td);
     tbody.appendChild(tr);
     return;
@@ -2140,12 +2230,84 @@ async function fetchAndRenderApprovalExamplesTable() {
   });
 }
 
+function getApprovalModeConfig() {
+  if (approvalMode === 'unapprove') {
+    return {
+      title: 'Unapproval',
+      description: 'Select a verified example, preview it, then unapprove it.',
+      listTitle: 'Verified Examples',
+      actionLabel: 'Unapprove Example',
+      toggleLabel: 'Switch to Approval'
+    };
+  }
+
+  return {
+    title: 'Approval',
+    description: 'Select an unverified example, preview it, then approve it.',
+    listTitle: 'Unverified Examples',
+    actionLabel: 'Approve Example',
+    toggleLabel: 'Switch to Unapproval'
+  };
+}
+
+function applyApprovalActionButtonStyle(btn, isApproveAction) {
+  if (!btn) return;
+  btn.classList.remove('approve-action', 'unapprove-action');
+  btn.classList.add(isApproveAction ? 'approve-action' : 'unapprove-action');
+}
+
+function resetApprovalSelectionUI() {
+  const wrap = document.getElementById('approval-table-wrap');
+  const thead = document.querySelector('#approval-image-table thead tr');
+  const tbody = document.querySelector('#approval-image-table tbody');
+  const btn = document.getElementById('approve-example-btn');
+  const status = document.getElementById('approval-status');
+
+  currentApprovalExampleId = null;
+  if (wrap) wrap.classList.add('hidden');
+  if (thead) thead.innerHTML = '';
+  if (tbody) tbody.innerHTML = '';
+  if (btn) btn.disabled = true;
+  if (status) status.textContent = '';
+}
+
+function renderApprovalModeUI() {
+  const cfg = getApprovalModeConfig();
+
+  const title = document.getElementById('approval-title');
+  const description = document.getElementById('approval-description');
+  const listTitle = document.getElementById('approval-list-title');
+  const actionBtn = document.getElementById('approve-example-btn');
+  const toggleBtn = document.getElementById('approval-mode-toggle');
+
+  if (title) title.textContent = cfg.title;
+  if (description) description.textContent = cfg.description;
+  if (listTitle) listTitle.textContent = cfg.listTitle;
+  if (actionBtn) actionBtn.textContent = cfg.actionLabel;
+  applyApprovalActionButtonStyle(actionBtn, approvalMode === 'approve');
+  if (toggleBtn) toggleBtn.textContent = cfg.toggleLabel;
+
+  resetApprovalSelectionUI();
+  fetchAndRenderApprovalExamplesTable();
+}
+
 async function fetchAndRenderApprovalTable(exampleId) {
   const wrap = document.getElementById('approval-table-wrap');
   const theadRow = document.querySelector('#approval-image-table thead tr');
   const tbody = document.querySelector('#approval-image-table tbody');
 
   if (!wrap || !theadRow || !tbody) return;
+
+  const { data: exMeta, error: exMetaErr } = await supabaseClient
+    .from('example')
+    .select('width')
+    .eq('id', exampleId)
+    .maybeSingle();
+
+  if (exMetaErr) {
+    console.error('Error loading example metadata for approval:', exMetaErr);
+    return;
+  }
 
   // Audio columns via recording_session -> example
   const { data: clips, error: clipsError } = await supabaseClient
@@ -2184,15 +2346,31 @@ async function fetchAndRenderApprovalTable(exampleId) {
   theadRow.innerHTML = '<th>Image</th>';
   tbody.innerHTML = '';
 
-  (clips || []).forEach(clip => {
-    const th = document.createElement('th');
-    const btn = document.createElement('button');
-    btn.textContent = 'Play';
-    btn.classList.add('custom-button');
-    btn.addEventListener('click', () => new Audio(clip.audio_path).play());
-    th.appendChild(btn);
-    theadRow.appendChild(th);
+  const maxCheckCol = (checks || []).reduce((m, c) => Math.max(m, c.column_index || 0), 0);
+  const configuredWidth = Number.isFinite(exMeta?.width) ? exMeta.width : 0;
+  const maxColumns = Math.max(configuredWidth, maxCheckCol, ...(clips || []).map(c => c.position || 0), 0);
+
+  const clipByPosition = new Map();
+  (clips || []).forEach((clip) => {
+    if (!clipByPosition.has(clip.position)) {
+      clipByPosition.set(clip.position, clip);
+    }
   });
+
+  for (let col = 1; col <= maxColumns; col++) {
+    const th = document.createElement('th');
+    const clip = clipByPosition.get(col);
+    if (clip) {
+      const btn = document.createElement('button');
+      btn.textContent = 'Play';
+      btn.classList.add('custom-button');
+      btn.addEventListener('click', () => new Audio(clip.audio_path).play());
+      th.appendChild(btn);
+    } else {
+      th.textContent = `Col ${col}`;
+    }
+    theadRow.appendChild(th);
+  }
 
   (images || []).forEach(img => {
     const tr = document.createElement('tr');
@@ -2205,9 +2383,8 @@ async function fetchAndRenderApprovalTable(exampleId) {
     tdImg.appendChild(imageEl);
     tr.appendChild(tdImg);
 
-    (clips || []).forEach((_, i) => {
+    for (let col = 1; col <= maxColumns; col++) {
       const td = document.createElement('td');
-      const col = i + 1;
       const hasMark = (checks || []).some(c => c.row_index === img.position && c.column_index === col);
       if (hasMark) {
         const mark = document.createElement('img');
@@ -2218,7 +2395,7 @@ async function fetchAndRenderApprovalTable(exampleId) {
         td.appendChild(mark);
       }
       tr.appendChild(td);
-    });
+    }
 
     tbody.appendChild(tr);
   });
@@ -2236,23 +2413,19 @@ document.getElementById('approve-example-btn')?.addEventListener('click', async 
     return;
   }
 
-  if (status) status.textContent = 'Approving...';
+  const isUnapprove = approvalMode === 'unapprove';
+  if (status) status.textContent = isUnapprove ? 'Unapproving...' : 'Approving...';
 
   const { error: exErr } = await supabaseClient
     .from('example')
-    .update({ verification_status: true })
+    .update({ verification_status: !isUnapprove })
     .eq('id', currentApprovalExampleId);
 
   if (exErr) {
     console.error('Failed to approve example:', exErr);
-    if (status) status.textContent = 'Failed to approve example.';
+    if (status) status.textContent = isUnapprove ? 'Failed to unapprove example.' : 'Failed to approve example.';
     return;
   }
-
-  await supabaseClient
-    .from('recording_session')
-    .update({ verification_status: true })
-    .eq('example_id', currentApprovalExampleId);
 
   currentApprovalExampleId = null;
   if (btn) btn.disabled = true;
@@ -2260,8 +2433,434 @@ document.getElementById('approve-example-btn')?.addEventListener('click', async 
   if (thead) thead.innerHTML = '';
   if (tbody) tbody.innerHTML = '';
 
-  if (status) status.textContent = 'Example approved.';
+  if (status) status.textContent = isUnapprove ? 'Example unapproved.' : 'Example approved.';
   await fetchAndRenderApprovalExamplesTable();
+});
+
+document.getElementById('approval-mode-toggle')?.addEventListener('click', () => {
+  approvalMode = approvalMode === 'approve' ? 'unapprove' : 'approve';
+  renderApprovalModeUI();
+});
+
+function recordingSessionOptionLabel(session) {
+  const dt = session.created_at ? new Date(session.created_at).toLocaleString() : 'Unknown time';
+  const lang = session.language || 'No language';
+  const user = session.user || 'Unknown user';
+  const state = session.verification_status ? 'Approved' : 'Unapproved';
+  return `${dt} | ${lang} | ${user} | ${state}`;
+}
+
+function clearRecordingApprovalPreview() {
+  const wrap = document.getElementById('recording-approval-preview-wrap');
+  const theadRow = document.querySelector('#recording-approval-preview-table thead tr');
+  const tbody = document.querySelector('#recording-approval-preview-table tbody');
+  if (wrap) wrap.classList.add('hidden');
+  if (theadRow) theadRow.innerHTML = '';
+  if (tbody) tbody.innerHTML = '';
+}
+
+async function renderRecordingApprovalPreview(exampleId, sessionId) {
+  const wrap = document.getElementById('recording-approval-preview-wrap');
+  const theadRow = document.querySelector('#recording-approval-preview-table thead tr');
+  const tbody = document.querySelector('#recording-approval-preview-table tbody');
+  const status = document.getElementById('recording-approval-status');
+  if (!wrap || !theadRow || !tbody) return;
+
+  clearRecordingApprovalPreview();
+  if (!exampleId || !sessionId) return;
+
+  const { data: exMeta, error: exMetaErr } = await supabaseClient
+    .from('example')
+    .select('width, title')
+    .eq('id', exampleId)
+    .maybeSingle();
+  if (exMetaErr) {
+    console.error('Failed to load example metadata for recording preview:', exMetaErr);
+    if (status) status.textContent = 'Failed to load preview metadata.';
+    return;
+  }
+
+  const { data: clips, error: clipsErr } = await supabaseClient
+    .from('audio')
+    .select('id, audio_path, position')
+    .eq('recording_session_id', sessionId)
+    .order('position', { ascending: true });
+  if (clipsErr) {
+    console.error('Failed to load session audio for recording preview:', clipsErr);
+    if (status) status.textContent = 'Failed to load session audio.';
+    return;
+  }
+
+  const { data: images, error: imgErr } = await supabaseClient
+    .from('image')
+    .select('id, image_path, position')
+    .eq('example_id', exampleId)
+    .order('position', { ascending: true });
+  if (imgErr) {
+    console.error('Failed to load images for recording preview:', imgErr);
+    if (status) status.textContent = 'Failed to load images.';
+    return;
+  }
+
+  const { data: checks, error: checksErr } = await supabaseClient
+    .from('checkmarks')
+    .select('row_index, column_index')
+    .eq('example_id', exampleId);
+  if (checksErr) {
+    console.error('Failed to load checkmarks for recording preview:', checksErr);
+    if (status) status.textContent = 'Failed to load checkmarks.';
+    return;
+  }
+
+  const maxCheckCol = (checks || []).reduce((m, c) => Math.max(m, c.column_index || 0), 0);
+  const configuredWidth = Number.isFinite(exMeta?.width) ? exMeta.width : 0;
+  const maxColumns = Math.max(configuredWidth, maxCheckCol, ...(clips || []).map(c => c.position || 0), 0);
+
+  const clipByPosition = new Map();
+  (clips || []).forEach((clip) => {
+    if (!clipByPosition.has(clip.position)) {
+      clipByPosition.set(clip.position, clip);
+    }
+  });
+
+  theadRow.innerHTML = '<th>Image</th>';
+  for (let col = 1; col <= maxColumns; col++) {
+    const th = document.createElement('th');
+    const clip = clipByPosition.get(col);
+    if (clip) {
+      const btn = document.createElement('button');
+      btn.textContent = 'Play';
+      btn.classList.add('custom-button');
+      btn.addEventListener('click', () => new Audio(clip.audio_path).play());
+      th.appendChild(btn);
+    } else {
+      th.textContent = `Col ${col}`;
+    }
+    theadRow.appendChild(th);
+  }
+
+  tbody.innerHTML = '';
+  (images || []).forEach((img) => {
+    const tr = document.createElement('tr');
+
+    const tdImg = document.createElement('td');
+    const imageEl = document.createElement('img');
+    imageEl.src = img.image_path;
+    imageEl.alt = exMeta?.title || '';
+    imageEl.style.width = '100px';
+    imageEl.style.height = 'auto';
+    tdImg.appendChild(imageEl);
+    tr.appendChild(tdImg);
+
+    for (let col = 1; col <= maxColumns; col++) {
+      const td = document.createElement('td');
+      const hasMark = (checks || []).some(c => c.row_index === img.position && c.column_index === col);
+      if (hasMark) {
+        const mark = document.createElement('img');
+        mark.src = 'images/checkmark.png';
+        mark.alt = '✔';
+        mark.style.width = '20px';
+        mark.style.height = '20px';
+        td.appendChild(mark);
+      }
+      tr.appendChild(td);
+    }
+
+    tbody.appendChild(tr);
+  });
+
+  wrap.classList.remove('hidden');
+}
+
+function updateRecordingSessionActionUI() {
+  const select = document.getElementById('recording-session-select');
+  const btn = document.getElementById('toggle-recording-session-approval-btn');
+  const status = document.getElementById('recording-approval-status');
+  if (!select || !btn) return;
+
+  const selectedId = select.value || null;
+  currentRecordingApprovalSessionId = selectedId;
+
+  const session = currentRecordingApprovalSessions.find(s => s.id === selectedId) || null;
+  btn.disabled = !session;
+  if (!session) {
+    btn.textContent = 'Approve Session';
+    applyApprovalActionButtonStyle(btn, true);
+    clearRecordingApprovalPreview();
+    if (status) status.textContent = '';
+    return;
+  }
+
+  btn.textContent = session.verification_status ? 'Unapprove Session' : 'Approve Session';
+  applyApprovalActionButtonStyle(btn, !session.verification_status);
+  renderRecordingApprovalPreview(currentRecordingApprovalExampleId, session.id);
+}
+
+async function fetchAndRenderRecordingApprovalSessions(exampleId) {
+  const select = document.getElementById('recording-session-select');
+  const btn = document.getElementById('toggle-recording-session-approval-btn');
+  const status = document.getElementById('recording-approval-status');
+  if (!select || !btn) return;
+
+  select.innerHTML = '';
+  select.disabled = true;
+  btn.disabled = true;
+  applyApprovalActionButtonStyle(btn, true);
+  currentRecordingApprovalSessionId = null;
+  currentRecordingApprovalSessions = [];
+  clearRecordingApprovalPreview();
+  if (status) status.textContent = '';
+
+  const { data: sessions, error } = await supabaseClient
+    .from('recording_session')
+    .select('id, created_at, language, "user", verification_status')
+    .eq('example_id', exampleId)
+    .order('created_at', { ascending: false });
+
+  if (error) {
+    console.error('Failed to load recording sessions:', error);
+    if (status) status.textContent = 'Failed to load recording sessions.';
+    return;
+  }
+
+  currentRecordingApprovalSessions = sessions || [];
+  if (!currentRecordingApprovalSessions.length) {
+    const opt = document.createElement('option');
+    opt.value = '';
+    opt.textContent = 'No recording sessions for this example';
+    select.appendChild(opt);
+    return;
+  }
+
+  currentRecordingApprovalSessions.forEach((session) => {
+    const opt = document.createElement('option');
+    opt.value = session.id;
+    opt.textContent = recordingSessionOptionLabel(session);
+    select.appendChild(opt);
+  });
+
+  select.disabled = false;
+  select.value = currentRecordingApprovalSessions[0].id;
+  updateRecordingSessionActionUI();
+}
+
+async function fetchAndRenderRecordingApprovalExamplesTable() {
+  const tbody = document.querySelector('#recording-approval-examples-table tbody');
+  const select = document.getElementById('recording-session-select');
+  const btn = document.getElementById('toggle-recording-session-approval-btn');
+  const status = document.getElementById('recording-approval-status');
+  if (!tbody || !select || !btn) return;
+
+  tbody.innerHTML = '';
+  currentRecordingApprovalExampleId = null;
+  currentRecordingApprovalSessionId = null;
+  currentRecordingApprovalSessions = [];
+  select.innerHTML = '<option value="">Select an example first</option>';
+  select.disabled = true;
+  btn.disabled = true;
+  btn.textContent = 'Approve Session';
+  applyApprovalActionButtonStyle(btn, true);
+  clearRecordingApprovalPreview();
+  if (status) status.textContent = '';
+
+  const { data: examples, error } = await supabaseClient
+    .from('example')
+    .select('id, title, created_at')
+    .order('created_at', { ascending: false });
+
+  if (error) {
+    console.error('Failed to load examples for recording approval:', error);
+    if (status) status.textContent = 'Failed to load examples.';
+    return;
+  }
+
+  if (!examples || !examples.length) {
+    const tr = document.createElement('tr');
+    const td = document.createElement('td');
+    td.colSpan = 2;
+    td.textContent = 'No examples found.';
+    tr.appendChild(td);
+    tbody.appendChild(tr);
+    return;
+  }
+
+  examples.forEach((ex) => {
+    const tr = document.createElement('tr');
+    tr.style.cursor = 'pointer';
+
+    const tdTitle = document.createElement('td');
+    tdTitle.textContent = ex.title || '';
+    tr.appendChild(tdTitle);
+
+    const tdCreated = document.createElement('td');
+    tdCreated.textContent = ex.created_at ? new Date(ex.created_at).toLocaleString() : '';
+    tr.appendChild(tdCreated);
+
+    tr.addEventListener('click', async () => {
+      currentRecordingApprovalExampleId = ex.id;
+      await fetchAndRenderRecordingApprovalSessions(ex.id);
+    });
+
+    tbody.appendChild(tr);
+  });
+}
+
+document.getElementById('recording-session-select')?.addEventListener('change', () => {
+  updateRecordingSessionActionUI();
+});
+
+document.getElementById('toggle-recording-session-approval-btn')?.addEventListener('click', async () => {
+  const status = document.getElementById('recording-approval-status');
+  const select = document.getElementById('recording-session-select');
+  if (!select) return;
+  const sessionId = select.value || null;
+  if (!sessionId) {
+    if (status) status.textContent = 'Select a recording session first.';
+    return;
+  }
+
+  const session = currentRecordingApprovalSessions.find(s => s.id === sessionId);
+  if (!session) {
+    if (status) status.textContent = 'Session not found in current list.';
+    return;
+  }
+
+  const nextStatus = !session.verification_status;
+  if (status) status.textContent = nextStatus ? 'Approving session...' : 'Unapproving session...';
+
+  const { error } = await supabaseClient
+    .from('recording_session')
+    .update({ verification_status: nextStatus })
+    .eq('id', sessionId);
+
+  if (error) {
+    console.error('Failed to update session status:', error);
+    if (status) status.textContent = 'Failed to update recording session.';
+    return;
+  }
+
+  session.verification_status = nextStatus;
+  const selectedIndex = select.selectedIndex;
+  if (selectedIndex >= 0) {
+    select.options[selectedIndex].textContent = recordingSessionOptionLabel(session);
+  }
+  updateRecordingSessionActionUI();
+  if (status) status.textContent = nextStatus ? 'Recording session approved.' : 'Recording session unapproved.';
+});
+
+function updateClassViewableActionUI() {
+  const btn = document.getElementById('toggle-class-viewable-btn');
+  const status = document.getElementById('class-viewable-status');
+  if (!btn) return;
+
+  const ex = currentClassViewableExamples.find(e => e.id === currentClassViewableExampleId) || null;
+  btn.disabled = !ex;
+  if (!ex) {
+    btn.textContent = 'Make Class-Viewable';
+    applyApprovalActionButtonStyle(btn, true);
+    if (status) status.textContent = '';
+    return;
+  }
+
+  const isViewable = !!ex.class_viewable;
+  btn.textContent = isViewable ? 'Make Not Class-Viewable' : 'Make Class-Viewable';
+  applyApprovalActionButtonStyle(btn, !isViewable);
+}
+
+async function fetchAndRenderClassViewableExamplesTable() {
+  const tbody = document.querySelector('#class-viewable-examples-table tbody');
+  const status = document.getElementById('class-viewable-status');
+  const btn = document.getElementById('toggle-class-viewable-btn');
+  if (!tbody || !btn) return;
+
+  tbody.innerHTML = '';
+  currentClassViewableExampleId = null;
+  currentClassViewableExamples = [];
+  btn.disabled = true;
+  btn.textContent = 'Make Class-Viewable';
+  applyApprovalActionButtonStyle(btn, true);
+  if (status) status.textContent = '';
+
+  const { data: examples, error } = await supabaseClient
+    .from('example')
+    .select('id, title, created_at, class_viewable')
+    .order('created_at', { ascending: false });
+
+  if (error) {
+    console.error('Failed to load examples for class viewable tab:', error);
+    if (status) status.textContent = 'Failed to load examples.';
+    return;
+  }
+
+  currentClassViewableExamples = examples || [];
+  if (!currentClassViewableExamples.length) {
+    const tr = document.createElement('tr');
+    const td = document.createElement('td');
+    td.colSpan = 3;
+    td.textContent = 'No examples found.';
+    tr.appendChild(td);
+    tbody.appendChild(tr);
+    return;
+  }
+
+  currentClassViewableExamples.forEach((ex) => {
+    const tr = document.createElement('tr');
+    tr.style.cursor = 'pointer';
+
+    const tdTitle = document.createElement('td');
+    tdTitle.textContent = ex.title || '';
+    tr.appendChild(tdTitle);
+
+    const tdCreated = document.createElement('td');
+    tdCreated.textContent = ex.created_at ? new Date(ex.created_at).toLocaleString() : '';
+    tr.appendChild(tdCreated);
+
+    const tdViewable = document.createElement('td');
+    tdViewable.textContent = ex.class_viewable ? 'Yes' : 'No';
+    tr.appendChild(tdViewable);
+
+    tr.addEventListener('click', () => {
+      currentClassViewableExampleId = ex.id;
+      updateClassViewableActionUI();
+    });
+
+    tbody.appendChild(tr);
+  });
+}
+
+document.getElementById('toggle-class-viewable-btn')?.addEventListener('click', async () => {
+  const btn = document.getElementById('toggle-class-viewable-btn');
+  const status = document.getElementById('class-viewable-status');
+  const tbody = document.querySelector('#class-viewable-examples-table tbody');
+  if (!btn || !tbody) return;
+
+  const ex = currentClassViewableExamples.find(e => e.id === currentClassViewableExampleId) || null;
+  if (!ex) {
+    if (status) status.textContent = 'Select an example first.';
+    return;
+  }
+
+  const nextValue = !ex.class_viewable;
+  if (status) status.textContent = nextValue ? 'Making class-viewable...' : 'Making not class-viewable...';
+
+  const { error } = await supabaseClient
+    .from('example')
+    .update({ class_viewable: nextValue })
+    .eq('id', ex.id);
+
+  if (error) {
+    console.error('Failed to update class_viewable:', error);
+    if (status) status.textContent = 'Failed to update class-viewable status.';
+    return;
+  }
+
+  ex.class_viewable = nextValue;
+  if (status) status.textContent = nextValue ? 'Example is now class-viewable.' : 'Example is now not class-viewable.';
+
+  // Re-render quickly so the "Class Viewable" column stays accurate.
+  await fetchAndRenderClassViewableExamplesTable();
+  currentClassViewableExampleId = ex.id;
+  updateClassViewableActionUI();
 });
 
 
@@ -2274,7 +2873,7 @@ function applyRoleVisibility() {
 
   let allowedTabs;
   if (role === 'creator') {
-    allowedTabs = ['tab1', 'tab2', 'tab3', 'tab4', 'tab5'];
+    allowedTabs = ['tab1', 'tab2', 'tab3', 'tab4', 'tab5', 'tab6', 'tab7'];
   } else if (role === 'recorder') {
     allowedTabs = ['tab1', 'tab2', 'tab3'];
   } else {

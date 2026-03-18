@@ -68,7 +68,9 @@
 				<button class="tab-button" id="tab2-btn">Listen</button>
 				<button class="tab-button" id="tab3-btn">Record</button>
 				<button class="tab-button" id="tab4-btn">Create Example</button>
-				<button class="tab-button" id="tab5-btn">Approval</button>
+				<button class="tab-button" id="tab5-btn">Example Approval</button>
+				<button class="tab-button" id="tab6-btn">Recording Approval</button>
+				<button class="tab-button" id="tab7-btn">Class Viewable</button>
 			</div>
 
 			<!-- Tab 1 Content: Introduction Message -->
@@ -276,10 +278,13 @@
 			</div>
 
 			<div id="tab5" class="tab-content">
-				<h2>Approval</h2>
-				<p>Select an unverified example, preview it, then approve it.</p>
+				<h2 id="approval-title">Approval</h2>
+				<div style="margin-bottom: 8px;">
+					<button id="approval-mode-toggle" class="custom-button">Switch to Unapproval</button>
+				</div>
+				<p id="approval-description">Select an unverified example, preview it, then approve it.</p>
 
-				<h3>Unverified Examples</h3>
+				<h3 id="approval-list-title">Unverified Examples</h3>
 				<table id="approval-examples-table">
 					<thead>
 					<tr>
@@ -301,6 +306,64 @@
 				<div style="margin-top: 12px;">
 					<button id="approve-example-btn" class="custom-button" disabled>Approve Example</button>
 					<span id="approval-status" style="margin-left:8px;"></span>
+				</div>
+			</div>
+
+			<div id="tab6" class="tab-content">
+				<h2>Recording Approval</h2>
+				<p>Select an example, then approve or unapprove one recording session.</p>
+
+				<h3>Examples</h3>
+				<table id="recording-approval-examples-table">
+					<thead>
+					<tr>
+						<th>Title</th>
+						<th>Created</th>
+					</tr>
+					</thead>
+					<tbody></tbody>
+				</table>
+
+				<div style="margin-top: 12px;">
+					<label for="recording-session-select" style="display:block; margin-bottom:6px;">Recording Session</label>
+					<select id="recording-session-select" style="min-width: 360px;" disabled>
+						<option value="">Select an example first</option>
+					</select>
+				</div>
+
+				<div style="margin-top: 12px;">
+					<button id="toggle-recording-session-approval-btn" class="custom-button" disabled>Approve Session</button>
+					<span id="recording-approval-status" style="margin-left:8px;"></span>
+				</div>
+
+				<div id="recording-approval-preview-wrap" class="hidden" style="margin-top: 16px;">
+					<h3>Selected Recording Session Preview</h3>
+					<table id="recording-approval-preview-table">
+						<thead><tr></tr></thead>
+						<tbody></tbody>
+					</table>
+				</div>
+			</div>
+
+			<div id="tab7" class="tab-content">
+				<h2>Class Viewable</h2>
+				<p>Select an example, then make it class-viewable or not class-viewable.</p>
+
+				<h3>Examples</h3>
+				<table id="class-viewable-examples-table">
+					<thead>
+					<tr>
+						<th>Title</th>
+						<th>Created</th>
+						<th>Class Viewable</th>
+					</tr>
+					</thead>
+					<tbody></tbody>
+				</table>
+
+				<div style="margin-top: 12px;">
+					<button id="toggle-class-viewable-btn" class="custom-button" disabled>Make Class-Viewable</button>
+					<span id="class-viewable-status" style="margin-left:8px;"></span>
 				</div>
 			</div>
 		</div>
