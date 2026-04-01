@@ -26,7 +26,7 @@ fetchAndRenderTable(): Promise<void>
 - RETURNS: Promise<void>.
 
 fetchAndRenderExamplesTable(): Promise<void>
-- WHAT: Builds the list of example rows (label, language, user). Each row click
+- WHAT: Builds the list of example rows (label, language, recording session). Each row click
         sets filters and triggers fetchAndRenderTable().
 - WHERE CALLED: In checkLoginStatus() during app init.
 - PARAMS: None.
@@ -109,7 +109,7 @@ let currentUserId      = null; //String: user's Supabase Auth ID. Used in checkL
 let currentLabel       = null; //String: the currently selected examples in tab 3. Used for submission.
 let currentLanguage    = null; //String: the language being used to filter in step 2 of tab 3. Should be removed when filtering method improves.
 let currentSessionId   = null; //String: the ID of the current submission session the user is doing in tab 3. Used in refreshStep3FromSession().
-let currentUserFilter = null; // UUID of the selected user (or null for "any")
+let currentListenSessionId = null; // recording_session.id for Listen playback (or null → pick default)
 let currentFirstName = null;
 let currentRole = 'viewer';
 let currentApprovalExampleId = null;
@@ -452,9 +452,13 @@ const langInput = document.getElementById('language-search-input');
 const labelInput = document.getElementById('label-search-input');
 labelInput.addEventListener('input', () => {
   currentListenExampleId = null;
+  currentListenSessionId = null;
   fetchAndRenderTable();
 });
-langInput.addEventListener('input',  () => fetchAndRenderTable());
+langInput.addEventListener('input', () => {
+  currentListenSessionId = null;
+  fetchAndRenderTable();
+});
 
 //refetching the top table displaying the selected example everytime the filters are changed for tab 3 step 2
 const langInputD  = document.getElementById('language-search-input-d');
@@ -464,6 +468,49 @@ labelInputD.addEventListener('input', () => {
   fetchAndRenderTableD();
 });
 langInputD.addEventListener('input',  fetchAndRenderTableD);
+
+function listenSessionLabel(user, createdAt, sessionId) {
+  const u = (user || '').trim() || sessionId.slice(0, 8);
+  const d = createdAt ? new Date(createdAt).toLocaleString(undefined, { dateStyle: 'short', timeStyle: 'short' }) : '';
+  return d ? `${u} — ${d}` : u;
+}
+
+/** Newest verified recording_session (full set) for example + language, or null. */
+async function pickDefaultListenSessionId(exampleId, languageFilter, width) {
+  const need = width && width > 0 ? width : null;
+  if (!need || !languageFilter) return null;
+  const { data: rows, error } = await supabaseClient
+    .from('audio')
+    .select(`
+      position,
+      recording_session:recording_session!inner(id, created_at, example_id, language, verification_status)
+    `)
+    .eq('recording_session.example_id', exampleId)
+    .eq('recording_session.language', languageFilter)
+    .eq('recording_session.verification_status', true);
+  if (error || !rows?.length) return null;
+  const bySession = new Map();
+  for (const row of rows) {
+    const s = row.recording_session;
+    if (!s?.id) continue;
+    let entry = bySession.get(s.id);
+    if (!entry) {
+      entry = { createdAt: s.created_at, posSet: new Set() };
+      bySession.set(s.id, entry);
+    }
+    if (row.position != null) entry.posSet.add(row.position);
+  }
+  const full = [];
+  for (const [id, { createdAt, posSet }] of bySession) {
+    let ok = true;
+    for (let i = 1; i <= need; i++) {
+      if (!posSet.has(i)) { ok = false; break; }
+    }
+    if (ok) full.push({ id, createdAt });
+  }
+  full.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  return full[0]?.id || null;
+}
 
 // Build the "Listen" table for a single example (images + audio columns + checkmarks)
 async function fetchAndRenderTable() {
@@ -513,7 +560,7 @@ async function fetchAndRenderTable() {
 
   const { data: exGate, error: exGateErr } = await supabaseClient
     .from('example')
-    .select('verification_status')
+    .select('verification_status, width')
     .eq('id', exampleId)
     .single();
   if (exGateErr) { console.error('Error loading example:', exGateErr); return; }
@@ -525,27 +572,29 @@ async function fetchAndRenderTable() {
     return;
   }
 
-  // Fetch audio columns joined to recording_session (new schema)
-  // - filter by example_id, language, verified sessions AND verified example (see gate above)
-  // - NOTE: "user" is on recording_session, not on audio
-  let q = supabaseClient
-    .from('audio')
-    .select(`
-      id, audio_path, transcription, position,
-      recording_session:recording_session!inner(example_id, language, "user", verification_status)
-    `)
-    .eq('recording_session.example_id', exampleId)
-    .eq('recording_session.language', languageFilter)
-    .eq('recording_session.verification_status', true)
-    .order('position', { ascending: true });
-
-  // Optional filter: only show one submitter (from examples table user dropdown)
-  if (currentUserFilter) {
-    q = q.eq('recording_session."user"', currentUserFilter);
+  let clips = [];
+  if (languageFilter) {
+    let effectiveSessionId = currentListenSessionId;
+    if (!effectiveSessionId) {
+      effectiveSessionId = await pickDefaultListenSessionId(exampleId, languageFilter, exGate.width);
+    }
+    if (effectiveSessionId) {
+      let q = supabaseClient
+        .from('audio')
+        .select(`
+          id, audio_path, transcription, position,
+          recording_session:recording_session!inner(example_id, language, "user", verification_status)
+        `)
+        .eq('recording_session.example_id', exampleId)
+        .eq('recording_session.language', languageFilter)
+        .eq('recording_session.verification_status', true)
+        .eq('recording_session_id', effectiveSessionId)
+        .order('position', { ascending: true });
+      const { data, error: clipsError } = await q;
+      if (clipsError) { console.error('Error loading audio:', clipsError); return; }
+      clips = data || [];
+    }
   }
-
-  const { data: clips, error: clipsError } = await q;
-  if (clipsError) { console.error('Error loading audio:', clipsError); return; }
 
   // Keep Subtab C in sync: it expects `path`, so map audio_path -> path
   renderSubtab3Table((clips || []).map(c => ({ ...c, path: c.audio_path })));
@@ -621,12 +670,11 @@ async function fetchAndRenderTable() {
   });
 }
 
-// Build the examples list: Title | Languages(dropdown) | User(dropdown)
+// Build the examples list: Title | Languages(dropdown) | Session(dropdown)
 // - Only verified examples; only VERIFIED recording_session rows are considered
-// - Languages dropdown lists languages with a FULL set (positions 1..width)
-// - User dropdown (depends on selected language) lists submitters ("user" column)
-//   who have a FULL set for that example+language
-// - Clicking a row or changing a dropdown sets filters + currentUserFilter, then loads the main table
+// - Languages dropdown lists languages with at least one session that has a FULL set (positions 1..width)
+// - Session dropdown lists recording_session rows (same user may appear multiple times) with a full set
+// - Clicking a row or changing a dropdown sets filters + currentListenSessionId, then loads the main table
 async function fetchAndRenderExamplesTable() {
   // 1) Fetch examples (need width to know how many positions a "full set" means)
   let exQuery = supabaseClient
@@ -645,16 +693,16 @@ async function fetchAndRenderExamplesTable() {
 
   const ids = (examples || []).map(e => e.id);
 
-  // 2) Fetch VERIFIED audio joined to recording_session → (example_id, language, "user", position)
-  // Build nested map: example_id -> Map(language -> Map(user -> Set(positions))))
-  const byExLangUser = new Map();
+  // 2) Fetch VERIFIED audio joined to recording_session → per-session position sets (no user-level merge)
+  // Build nested map: example_id -> Map(language -> Map(session_id -> { user, createdAt, posSet }))
+  const byExLangSession = new Map();
 
   if (ids.length) {
     const { data: auds, error: audErr } = await supabaseClient
       .from('audio')
       .select(`
         position,
-        recording_session:recording_session!inner(example_id, language, "user", verification_status)
+        recording_session:recording_session!inner(id, example_id, language, "user", verification_status, created_at)
       `)
       .in('recording_session.example_id', ids)
       .eq('recording_session.verification_status', true); // ONLY verified sessions
@@ -663,22 +711,26 @@ async function fetchAndRenderExamplesTable() {
       console.error('Error fetching audio/recording_session:', audErr);
     } else {
       for (const row of (auds || [])) {
-        const exId = row.recording_session?.example_id;
-        const lang = row.recording_session?.language;
-        const usr  = row.recording_session?.user; // <-- string from recording_session."user"
+        const sess = row.recording_session;
+        const exId = sess?.example_id;
+        const lang = sess?.language;
+        const sid  = sess?.id;
         const pos  = row.position;
-        if (!exId || !lang || !usr) continue;
+        if (!exId || !lang || !sid) continue;
 
-        let langMap = byExLangUser.get(exId);
-        if (!langMap) { langMap = new Map(); byExLangUser.set(exId, langMap); }
+        let langMap = byExLangSession.get(exId);
+        if (!langMap) { langMap = new Map(); byExLangSession.set(exId, langMap); }
 
-        let userMap = langMap.get(lang);
-        if (!userMap) { userMap = new Map(); langMap.set(lang, userMap); }
+        let sessMap = langMap.get(lang);
+        if (!sessMap) { sessMap = new Map(); langMap.set(lang, sessMap); }
 
-        let posSet = userMap.get(usr);
-        if (!posSet) { posSet = new Set(); userMap.set(usr, posSet); }
+        let entry = sessMap.get(sid);
+        if (!entry) {
+          entry = { user: sess.user, createdAt: sess.created_at, posSet: new Set() };
+          sessMap.set(sid, entry);
+        }
 
-        if (pos != null) posSet.add(pos);
+        if (pos != null) entry.posSet.add(pos);
       }
     }
   }
@@ -690,40 +742,43 @@ async function fetchAndRenderExamplesTable() {
     return true;
   };
 
-  // Languages with at least one user having a full set
+  // Languages with at least one recording session having a full set
   function fullLanguagesForExample(ex) {
     const need = ex.width && ex.width > 0 ? ex.width : null;
-    const langMap = byExLangUser.get(ex.id) || new Map();
+    const langMap = byExLangSession.get(ex.id) || new Map();
     const out = [];
-    for (const [lang, userMap] of langMap.entries()) {
-      const ok = Array.from(userMap.values()).some(posSet => hasFullSet(posSet, need));
+    for (const [lang, sessMap] of langMap.entries()) {
+      const ok = Array.from(sessMap.values()).some(entry => hasFullSet(entry.posSet, need));
       if (ok) out.push(lang);
     }
     return out.sort();
   }
 
-  // Users (string "user" values) with a full set for given example+language
-  function fullUsersForExampleLang(ex, lang) {
+  // Recording sessions with a full set for given example+language (newest first)
+  function fullSessionsForExampleLang(ex, lang) {
     const need = ex.width && ex.width > 0 ? ex.width : null;
-    const langMap = byExLangUser.get(ex.id) || new Map();
-    const userMap = langMap.get(lang) || new Map();
+    const langMap = byExLangSession.get(ex.id) || new Map();
+    const sessMap = langMap.get(lang) || new Map();
     const out = [];
-    for (const [usr, posSet] of userMap.entries()) {
-      if (hasFullSet(posSet, need)) out.push(usr);
+    for (const [sessionId, entry] of sessMap.entries()) {
+      if (hasFullSet(entry.posSet, need)) {
+        out.push({ id: sessionId, user: entry.user, createdAt: entry.createdAt });
+      }
     }
-    return out.sort((a, b) => a.localeCompare(b));
+    out.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    return out;
   }
 
-  // 3) Render (Title | Languages | User)
+  // 3) Render (Title | Languages | Session)
   const thead = document.querySelector('#examples-table thead tr');
-  if (thead) thead.innerHTML = '<th>Title</th><th>Languages</th><th>User</th>';
+  if (thead) thead.innerHTML = '<th>Title</th><th>Languages</th><th>Session</th>';
 
   const tbody = document.querySelector('#examples-table tbody');
   tbody.innerHTML = '';
 
   (examples || []).forEach(ex => {
     // Skip examples with no verified audio at all
-    const langMap = byExLangUser.get(ex.id);
+    const langMap = byExLangSession.get(ex.id);
     if (!langMap || !langMap.size) return;
 
     const langsFull = fullLanguagesForExample(ex);
@@ -754,69 +809,75 @@ async function fetchAndRenderExamplesTable() {
     tdLangs.appendChild(selLang);
     tr.appendChild(tdLangs);
 
-    // User dropdown (users who have full set for selected language)
-    const tdUsers = document.createElement('td');
-    const selUser = document.createElement('select');
-    selUser.style.minWidth = '200px';
+    // Session dropdown (one option per recording_session with a full set)
+    const tdSessions = document.createElement('td');
+    const selSession = document.createElement('select');
+    selSession.style.minWidth = '280px';
 
-    const refreshUsers = () => {
-      selUser.innerHTML = '';
+    const refreshSessions = () => {
+      selSession.innerHTML = '';
       if (selLang.disabled) {
         const opt = document.createElement('option');
-        opt.textContent = 'No users';
+        opt.textContent = 'No sessions';
         opt.value = '';
-        selUser.appendChild(opt);
-        selUser.disabled = true;
+        selSession.appendChild(opt);
+        selSession.disabled = true;
         return;
       }
-      const users = fullUsersForExampleLang(ex, selLang.value);
-      if (!users.length) {
+      const sessions = fullSessionsForExampleLang(ex, selLang.value);
+      if (!sessions.length) {
         const opt = document.createElement('option');
-        opt.textContent = 'No users';
+        opt.textContent = 'No sessions';
         opt.value = '';
-        selUser.appendChild(opt);
-        selUser.disabled = true;
+        selSession.appendChild(opt);
+        selSession.disabled = true;
         return;
       }
-      selUser.disabled = false;
-      users.forEach(u => {
+      selSession.disabled = false;
+      const preferId =
+        currentListenExampleId === ex.id && currentListenSessionId &&
+        sessions.some(s => s.id === currentListenSessionId)
+          ? currentListenSessionId
+          : sessions[0].id;
+      sessions.forEach(s => {
         const opt = document.createElement('option');
-        opt.value = u;           // keep the string value of recording_session."user"
-        opt.textContent = u;     // show it as-is
-        selUser.appendChild(opt);
+        opt.value = s.id;
+        opt.textContent = listenSessionLabel(s.user, s.createdAt, s.id);
+        selSession.appendChild(opt);
       });
+      selSession.value = preferId;
     };
 
-    refreshUsers();
-    tdUsers.appendChild(selUser);
-    tr.appendChild(tdUsers);
+    refreshSessions();
+    tdSessions.appendChild(selSession);
+    tr.appendChild(tdSessions);
 
-    // Clicking row → set filters (title + language + user) and load
+    // Clicking row → set filters (title + language + recording session) and load
     tr.style.cursor = 'pointer';
     tr.addEventListener('click', () => {
       currentListenExampleId = ex.id;
       document.getElementById('label-search-input').value = ex.title || '';
       document.getElementById('language-search-input').value = selLang.disabled ? '' : (selLang.value || '');
-      currentUserFilter = selUser.disabled ? null : (selUser.value || null); // this is the string "user"
+      currentListenSessionId = selSession.disabled ? null : (selSession.value || null);
       fetchAndRenderTable();
     });
 
-    // Changing language → repopulate users and reload
+    // Changing language → repopulate sessions and reload
     selLang.addEventListener('change', () => {
       currentListenExampleId = ex.id;
-      refreshUsers();
+      refreshSessions();
       document.getElementById('label-search-input').value = ex.title || '';
       document.getElementById('language-search-input').value = selLang.value || '';
-      currentUserFilter = selUser.disabled ? null : (selUser.value || null);
+      currentListenSessionId = selSession.disabled ? null : (selSession.value || null);
       fetchAndRenderTable();
     });
 
-    // Changing user → reload for that user
-    selUser.addEventListener('change', () => {
+    // Changing session → reload
+    selSession.addEventListener('change', () => {
       currentListenExampleId = ex.id;
       document.getElementById('label-search-input').value = ex.title || '';
       document.getElementById('language-search-input').value = selLang.value || '';
-      currentUserFilter = selUser.disabled ? null : (selUser.value || null);
+      currentListenSessionId = selSession.disabled ? null : (selSession.value || null);
       fetchAndRenderTable();
     });
 
