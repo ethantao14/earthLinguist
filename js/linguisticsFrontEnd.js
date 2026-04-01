@@ -491,6 +491,7 @@ async function fetchAndRenderTable() {
       .from('example')
       .select('id')
       .eq('title', labelFilter)
+      .eq('verification_status', true)
       .order('created_at', { ascending: false })
       .limit(1);
 
@@ -510,8 +511,22 @@ async function fetchAndRenderTable() {
     return;
   }
 
+  const { data: exGate, error: exGateErr } = await supabaseClient
+    .from('example')
+    .select('verification_status')
+    .eq('id', exampleId)
+    .single();
+  if (exGateErr) { console.error('Error loading example:', exGateErr); return; }
+  if (!exGate?.verification_status) {
+    wrap.classList.add('hidden');
+    document.querySelector('#image-table thead tr').innerHTML = '';
+    document.querySelector('#image-table tbody').innerHTML = '';
+    document.getElementById('subtabC').innerHTML = '';
+    return;
+  }
+
   // Fetch audio columns joined to recording_session (new schema)
-  // - filter by example_id, language, and verified sessions
+  // - filter by example_id, language, verified sessions AND verified example (see gate above)
   // - NOTE: "user" is on recording_session, not on audio
   let q = supabaseClient
     .from('audio')
@@ -607,7 +622,7 @@ async function fetchAndRenderTable() {
 }
 
 // Build the examples list: Title | Languages(dropdown) | User(dropdown)
-// - Only VERIFIED recording_session rows are considered
+// - Only verified examples; only VERIFIED recording_session rows are considered
 // - Languages dropdown lists languages with a FULL set (positions 1..width)
 // - User dropdown (depends on selected language) lists submitters ("user" column)
 //   who have a FULL set for that example+language
@@ -617,6 +632,7 @@ async function fetchAndRenderExamplesTable() {
   let exQuery = supabaseClient
   .from('example')
   .select('id, title, width, created_at')
+  .eq('verification_status', true)
   .order('created_at', { ascending: false });
 
   if (currentRole === 'student') {
