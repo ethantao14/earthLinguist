@@ -162,6 +162,26 @@ document.getElementById('signup-page-btn').addEventListener('click', () => {
   document.getElementById('login-page-btn').classList.remove('active');
 });
 
+function wirePasswordToggle(toggleBtn, inputEl) {
+  if (!toggleBtn || !inputEl) return;
+  toggleBtn.addEventListener('click', () => {
+    const show = inputEl.type === 'password';
+    inputEl.type = show ? 'text' : 'password';
+    toggleBtn.textContent = show ? 'Hide' : 'Show';
+    toggleBtn.setAttribute('aria-label', show ? 'Hide password' : 'Show password');
+    toggleBtn.setAttribute('aria-pressed', show ? 'true' : 'false');
+  });
+}
+
+wirePasswordToggle(
+  document.getElementById('login-password-toggle'),
+  document.getElementById('password')
+);
+wirePasswordToggle(
+  document.getElementById('signup-password-toggle'),
+  document.getElementById('password-signup')
+);
+
 //Sign-up
 document.getElementById('signup-btn').addEventListener('click', async () => {
   const email = document.getElementById('email-signup').value.trim();         //user email
@@ -431,7 +451,8 @@ function bootDemo() {
   fetchAndRenderTable();
   fetchAndRenderExamplesTable();
 
-  currentRole = 'creator';
+  // Demo shows every tab; real "creator" accounts no longer see approval/class-viewable tabs.
+  currentRole = 'admin';
   applyRoleVisibility();
 
   //starts the wizard process on tab 3 on step 1
@@ -1022,7 +1043,7 @@ async function fetchAndRenderTableD() {
     th.style.width = COL_WIDTH_PX + 'px';
     th.style.verticalAlign = 'middle';
     th.style.padding = '8px';
-    const isCreator = currentRole === 'creator';
+    const isCreator = currentRole === 'creator' || currentRole === 'admin';
 
     const controls = document.createElement('div');
     controls.style.display = 'flex';
@@ -1566,13 +1587,16 @@ document.getElementById('submit-recordings-btn').addEventListener('click', async
   // 3) Insert new row in recording_session
   status.textContent = 'Creating session…';
 
+  const sessionVerified =
+    currentRole === 'creator' || currentRole === 'admin';
+
   const { data: sessionRow, error: sessionErr } = await supabaseClient
     .from('recording_session')
     .insert([{
       example_id: ex.id,
       language,
       user: userString,
-      verification_status: false
+      verification_status: sessionVerified
     }])
     .select('id')
     .single();
@@ -1951,6 +1975,7 @@ async function a_createExampleAndSessionFromStep1() {
       height: rows,
       title,
       user: currentFirstName,
+      verification_status: true,
       // created_at: leave to DB default (now())
       // id: leave to DB default (uuid gen)
     }])
@@ -1965,7 +1990,7 @@ async function a_createExampleAndSessionFromStep1() {
     .from('recording_session')
     .insert([{
       example_id: exampleId,
-      verification_status: true, // as requested
+      verification_status: true,
       language,                   // from Step 1 input
       user: currentFirstName,
       // created_at: DB default
@@ -2041,8 +2066,8 @@ function a_wireWizardOnce() {
   nextBtn?.addEventListener('click', async () => {
   const statusEl = document.getElementById('a-submit-status');
 
-  if (currentRole !== 'creator') {
-    statusEl.textContent = 'Only creators can create examples.';
+  if (currentRole !== 'creator' && currentRole !== 'admin') {
+    statusEl.textContent = 'Only creators or admins can create examples.';
     return;
   }
 
@@ -2094,8 +2119,8 @@ function a_wireWizardOnce() {
     submitBtn?.addEventListener('click', async () => {
     const statusEl = document.getElementById('a-submit-status');
 
-    if (currentRole !== 'creator') {
-      statusEl.textContent = 'Only creators can create examples.';
+    if (currentRole !== 'creator' && currentRole !== 'admin') {
+      statusEl.textContent = 'Only creators or admins can create examples.';
       return;
     }
 
@@ -2949,8 +2974,10 @@ function applyRoleVisibility() {
   console.log('applyRoleVisibility – active role:', role);
 
   let allowedTabs;
-  if (role === 'creator') {
+  if (role === 'admin') {
     allowedTabs = ['tab1', 'tab2', 'tab3', 'tab4', 'tab5', 'tab6', 'tab7'];
+  } else if (role === 'creator') {
+    allowedTabs = ['tab1', 'tab2', 'tab3', 'tab4'];
   } else if (role === 'recorder') {
     allowedTabs = ['tab1', 'tab2', 'tab3'];
   } else {

@@ -32,8 +32,11 @@
 
 			<!-- Log in form -->
 			<div id="login-page" class="auth-page">
-				<input id="identifier" type="text" placeholder="Username or email" />
-				<input id="password" type="password" placeholder="Password" />
+				<input id="identifier" type="text" placeholder="Username or email" autocomplete="username" />
+				<div class="auth-password-row">
+					<input id="password" type="password" placeholder="Password" autocomplete="current-password" />
+					<button type="button" id="login-password-toggle" class="auth-password-toggle" aria-label="Show password" aria-pressed="false">Show</button>
+				</div>
 				<button id="login-btn" class="custom-button">Log In</button>
 				<div id="auth-message"></div>
 			</div>
@@ -44,8 +47,11 @@
 					<input id="first-name" type="text" placeholder="First name" />
 					<input id="last-name" type="text" placeholder="Last name" />
 					<input id="username-signup" type="text" placeholder="Username" />
-				<input id="email-signup" type="text" placeholder="Email" />
-				<input id="password-signup" type="password" placeholder="Password" />
+				<input id="email-signup" type="text" placeholder="Email" autocomplete="email" />
+				<div class="auth-password-row">
+					<input id="password-signup" type="password" placeholder="Password" autocomplete="new-password" />
+					<button type="button" id="signup-password-toggle" class="auth-password-toggle" aria-label="Show password" aria-pressed="false">Show</button>
+				</div>
 				<button id="signup-btn" class="custom-button">Sign Up</button>
 				<div id="auth-message-signup"></div>
 			</div>

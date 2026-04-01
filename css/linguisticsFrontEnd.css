@@ -322,6 +322,37 @@ td img {
   box-sizing: border-box;
 }
 
+.auth-password-row {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+  width: 100%;
+}
+
+.auth-password-row input {
+  flex: 1;
+  min-width: 0;
+  width: auto;
+}
+
+.auth-password-toggle {
+  flex-shrink: 0;
+  padding: 0 12px;
+  font-size: 13px;
+  cursor: pointer;
+  border: 1px solid var(--color-accent);
+  border-radius: 6px;
+  background: var(--color-card);
+  color: var(--color-primary);
+  font-weight: 500;
+  white-space: nowrap;
+  font-family: inherit;
+}
+
+.auth-password-toggle:hover {
+  background: var(--color-hover);
+}
+
 .auth-toggle-button {
     padding: 8px 16px;
     background-color: var(--color-bg);
