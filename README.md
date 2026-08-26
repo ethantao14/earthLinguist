@@ -23,3 +23,6 @@ This project is an application that allows CMU students and linguists to learn l
 - HTML, CSS, JS
 - Supabase (Auth, Postgres, Storage)
 - Hosted on Vercel
+
+---
+Maintained by the EarthLinguist team at CMU.
