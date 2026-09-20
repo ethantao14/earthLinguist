@@ -1,0 +1,9 @@
+# Database schema dumped from the live project. Not committed: this repo is
+# public and the dump includes every RLS policy.
+db/schema.sql
+
+# Local Supabase CLI state
+supabase/.temp/
+supabase/.branches/
+
+.DS_Store

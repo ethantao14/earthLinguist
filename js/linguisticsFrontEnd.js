@@ -258,20 +258,19 @@ document.getElementById('login-btn').addEventListener('click', async () => {
 
   // If the user entered a username, looks into profile table in database to determine email corresponding to that username
   if (!identifier.includes('@')) {
-    const { data: prof, error: profErr } = await supabaseClient
-      .from('profiles')
-      .select('email')
-      .ilike('username', identifier)
-      .maybeSingle();
+    // Uses an RPC rather than reading the profiles table: signed-out visitors
+    // have no read access to profiles, so this returns one email and nothing else.
+    const { data: emailForUsername, error: profErr } = await supabaseClient
+      .rpc('email_for_username', { u: identifier });
 
     //Error query failed or could not find username, show user a message and end function
-    if (profErr || !prof?.email) {
+    if (profErr || !emailForUsername) {
       msg.textContent = 'Invalid login credentials.';
       return;
     }
 
     //converts the username to email for log-in
-    emailToUse = prof.email;
+    emailToUse = emailForUsername;
   }
   
   //tries to use supabase sign in using email and password and uses object destructuring to get error
