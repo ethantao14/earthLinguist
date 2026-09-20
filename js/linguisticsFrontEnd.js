@@ -503,11 +503,12 @@ async function pickDefaultListenSessionId(exampleId, languageFilter, width) {
     .from('audio')
     .select(`
       position,
-      recording_session:recording_session!inner(id, created_at, example_id, language, verification_status)
+      recording_session:recording_session!inner(id, created_at, example_id, language, verification_status, irb_hold)
     `)
     .eq('recording_session.example_id', exampleId)
     .eq('recording_session.language', languageFilter)
-    .eq('recording_session.verification_status', true);
+    .eq('recording_session.verification_status', true)
+    .eq('recording_session.irb_hold', false);
   if (error || !rows?.length) return null;
   const bySession = new Map();
   for (const row of rows) {
@@ -559,6 +560,7 @@ async function fetchAndRenderTable() {
       .select('id')
       .eq('title', labelFilter)
       .eq('verification_status', true)
+      .eq('irb_hold', false)
       .order('created_at', { ascending: false })
       .limit(1);
 
@@ -580,11 +582,11 @@ async function fetchAndRenderTable() {
 
   const { data: exGate, error: exGateErr } = await supabaseClient
     .from('example')
-    .select('verification_status, width')
+    .select('verification_status, width, irb_hold')
     .eq('id', exampleId)
     .single();
   if (exGateErr) { console.error('Error loading example:', exGateErr); return; }
-  if (!exGate?.verification_status) {
+  if (!exGate?.verification_status || exGate?.irb_hold) {
     wrap.classList.add('hidden');
     document.querySelector('#image-table thead tr').innerHTML = '';
     document.querySelector('#image-table tbody').innerHTML = '';
@@ -603,11 +605,12 @@ async function fetchAndRenderTable() {
         .from('audio')
         .select(`
           id, audio_path, transcription, position,
-          recording_session:recording_session!inner(example_id, language, "user", verification_status)
+          recording_session:recording_session!inner(example_id, language, "user", verification_status, irb_hold)
         `)
         .eq('recording_session.example_id', exampleId)
         .eq('recording_session.language', languageFilter)
         .eq('recording_session.verification_status', true)
+        .eq('recording_session.irb_hold', false)
         .eq('recording_session_id', effectiveSessionId)
         .order('position', { ascending: true });
       const { data, error: clipsError } = await q;
@@ -701,6 +704,7 @@ async function fetchAndRenderExamplesTable() {
   .from('example')
   .select('id, title, width, created_at')
   .eq('verification_status', true)
+  .eq('irb_hold', false)
   .order('created_at', { ascending: false });
 
   if (currentRole === 'student') {
@@ -722,10 +726,11 @@ async function fetchAndRenderExamplesTable() {
       .from('audio')
       .select(`
         position,
-        recording_session:recording_session!inner(id, example_id, language, "user", verification_status, created_at)
+        recording_session:recording_session!inner(id, example_id, language, "user", verification_status, irb_hold, created_at)
       `)
       .in('recording_session.example_id', ids)
-      .eq('recording_session.verification_status', true); // ONLY verified sessions
+      .eq('recording_session.verification_status', true) // ONLY verified sessions
+      .eq('recording_session.irb_hold', false);          // never held sessions
 
     if (audErr) {
       console.error('Error fetching audio/recording_session:', audErr);
@@ -977,6 +982,7 @@ async function fetchAndRenderTableD() {
       .from('example')
       .select('id, width, title')
       .eq('id', currentRecordExampleId)
+      .eq('irb_hold', false)
       .maybeSingle();
     if (exErr) {
       console.error('Could not load example for Step 2:', exErr);
@@ -987,6 +993,7 @@ async function fetchAndRenderTableD() {
       .from('example')
       .select('id, width, title')
       .eq('title', labelFilter)
+      .eq('irb_hold', false)
       .order('created_at', { ascending: false })
       .limit(1);
     if (exErr) {
@@ -1182,6 +1189,7 @@ async function fetchAndRenderExamplesTableD() {
     .from('example')
     .select('id, title, verification_status')
     .eq('verification_status', true)
+    .eq('irb_hold', false)
     .order('created_at', { ascending: false });
 
   const tbody = document.querySelector('#examples-table-d tbody');
@@ -1468,6 +1476,7 @@ document.getElementById('next-btn').addEventListener('click', async () => {
         .from('example')
         .select('width')
         .eq('id', currentRecordExampleId)
+        .eq('irb_hold', false)
         .maybeSingle();
       ex = data || null;
     } else {
@@ -1477,6 +1486,7 @@ document.getElementById('next-btn').addEventListener('click', async () => {
           .from('example')
           .select('id, width')
           .eq('title', labelFilter)
+          .eq('irb_hold', false)
           .order('created_at', { ascending: false })
           .limit(1);
         ex = rows?.[0] || null;
@@ -1546,6 +1556,7 @@ document.getElementById('submit-recordings-btn').addEventListener('click', async
       .from('example')
       .select('id, title')
       .eq('id', currentRecordExampleId)
+      .eq('irb_hold', false)
       .maybeSingle();
     ex = res.data || null;
     exErr = res.error || null;
@@ -1554,6 +1565,7 @@ document.getElementById('submit-recordings-btn').addEventListener('click', async
       .from('example')
       .select('id, title')
       .eq('title', currentLabel)
+      .eq('irb_hold', false)
       .order('created_at', { ascending: false })
       .limit(1);
     ex = res.data?.[0] || null;
@@ -2289,6 +2301,7 @@ async function fetchAndRenderApprovalExamplesTable() {
     .from('example')
     .select('id, title, created_at')
     .eq('verification_status', shouldBeVerified)
+    .eq('irb_hold', false)
     .order('created_at', { ascending: false });
 
   if (error) {
@@ -2403,10 +2416,19 @@ async function fetchAndRenderApprovalTable(exampleId) {
     .from('example')
     .select('width')
     .eq('id', exampleId)
+    .eq('irb_hold', false)
     .maybeSingle();
 
   if (exMetaErr) {
     console.error('Error loading example metadata for approval:', exMetaErr);
+    return;
+  }
+
+  // No row means the example was put on hold after this list was loaded.
+  if (!exMeta) {
+    theadRow.innerHTML = '';
+    tbody.innerHTML = '';
+    wrap.classList.add('hidden');
     return;
   }
 
@@ -2415,9 +2437,10 @@ async function fetchAndRenderApprovalTable(exampleId) {
     .from('audio')
     .select(`
       id, audio_path, position,
-      recording_session:recording_session!inner(example_id)
+      recording_session:recording_session!inner(example_id, irb_hold)
     `)
     .eq('recording_session.example_id', exampleId)
+    .eq('recording_session.irb_hold', false)
     .order('position', { ascending: true });
 
   if (clipsError) {
@@ -2520,7 +2543,8 @@ document.getElementById('approve-example-btn')?.addEventListener('click', async 
   const { error: exErr } = await supabaseClient
     .from('example')
     .update({ verification_status: !isUnapprove })
-    .eq('id', currentApprovalExampleId);
+    .eq('id', currentApprovalExampleId)
+    .eq('irb_hold', false);
 
   if (exErr) {
     console.error('Failed to approve example:', exErr);
@@ -2574,6 +2598,7 @@ async function renderRecordingApprovalPreview(exampleId, sessionId) {
     .from('example')
     .select('width, title')
     .eq('id', exampleId)
+    .eq('irb_hold', false)
     .maybeSingle();
   if (exMetaErr) {
     console.error('Failed to load example metadata for recording preview:', exMetaErr);
@@ -2581,10 +2606,18 @@ async function renderRecordingApprovalPreview(exampleId, sessionId) {
     return;
   }
 
+  // No row means the example was put on hold after the dropdown was populated.
+  if (!exMeta) {
+    clearRecordingApprovalPreview();
+    if (status) status.textContent = 'That example is no longer available.';
+    return;
+  }
+
   const { data: clips, error: clipsErr } = await supabaseClient
     .from('audio')
-    .select('id, audio_path, position')
+    .select('id, audio_path, position, recording_session:recording_session!inner(irb_hold)')
     .eq('recording_session_id', sessionId)
+    .eq('recording_session.irb_hold', false)
     .order('position', { ascending: true });
   if (clipsErr) {
     console.error('Failed to load session audio for recording preview:', clipsErr);
@@ -2716,6 +2749,7 @@ async function fetchAndRenderRecordingApprovalSessions(exampleId) {
     .from('recording_session')
     .select('id, created_at, language, "user", verification_status')
     .eq('example_id', exampleId)
+    .eq('irb_hold', false)
     .order('created_at', { ascending: false });
 
   if (error) {
@@ -2767,6 +2801,7 @@ async function fetchAndRenderRecordingApprovalExamplesTable() {
   const { data: examples, error } = await supabaseClient
     .from('example')
     .select('id, title, created_at')
+    .eq('irb_hold', false)
     .order('created_at', { ascending: false });
 
   if (error) {
@@ -2832,7 +2867,8 @@ document.getElementById('toggle-recording-session-approval-btn')?.addEventListen
   const { error } = await supabaseClient
     .from('recording_session')
     .update({ verification_status: nextStatus })
-    .eq('id', sessionId);
+    .eq('id', sessionId)
+    .eq('irb_hold', false);
 
   if (error) {
     console.error('Failed to update session status:', error);
@@ -2885,6 +2921,7 @@ async function fetchAndRenderClassViewableExamplesTable() {
   const { data: examples, error } = await supabaseClient
     .from('example')
     .select('id, title, created_at, class_viewable')
+    .eq('irb_hold', false)
     .order('created_at', { ascending: false });
 
   if (error) {
@@ -2947,7 +2984,8 @@ document.getElementById('toggle-class-viewable-btn')?.addEventListener('click', 
   const { error } = await supabaseClient
     .from('example')
     .update({ class_viewable: nextValue })
-    .eq('id', ex.id);
+    .eq('id', ex.id)
+    .eq('irb_hold', false);
 
   if (error) {
     console.error('Failed to update class_viewable:', error);
