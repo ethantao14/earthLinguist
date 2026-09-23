@@ -1610,8 +1610,8 @@ document.getElementById('submit-recordings-btn').addEventListener('click', async
   // 3) Insert new row in recording_session
   status.textContent = 'Creating session…';
 
-  const sessionVerified =
-    currentRole === 'creator' || currentRole === 'admin';
+  // Only an admin's own submission goes live without review.
+  const sessionVerified = currentRole === 'admin';
 
   const newSessionId = newId();
   const { error: sessionErr } = await supabaseClient
@@ -2000,7 +2000,7 @@ async function a_createExampleAndSessionFromStep1() {
       height: rows,
       title,
       user: currentFirstName,
-      verification_status: true,
+      verification_status: currentRole === 'admin',
       // created_at: leave to DB default (now())
     }]);
 
@@ -2013,7 +2013,7 @@ async function a_createExampleAndSessionFromStep1() {
     .insert([{
       id: recordingSessionId,
       example_id: exampleId,
-      verification_status: true,
+      verification_status: currentRole === 'admin',
       language,                   // from Step 1 input
       user: currentFirstName,
       // created_at: DB default
