@@ -131,6 +131,18 @@ const SUPABASE_URL    = 'https://wqmcsvamrfaxcbcvbyxv.supabase.co'; //Project's 
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndxbWNzdmFtcmZheGNiY3ZieXh2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDY4MTExMDAsImV4cCI6MjA2MjM4NzEwMH0.mQNXXwbn9baTQBQBn84f7ytvD2aYjk6bdnJTdc0wHrY';
 const supabaseClient  = createClient(SUPABASE_URL, SUPABASE_ANON_KEY); //Created supabase Client using previous 3 const's
 
+// Rows get their id here rather than from the database. Asking the database to
+// return a freshly inserted row requires that row to pass the read policy, and
+// a recording waiting for approval deliberately does not. Generating the id up
+// front avoids needing to read it back at all.
+function newId() {
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID();
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = Math.random() * 16 | 0;
+    return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
+  });
+}
+
 //Demo version for recruiters
 //Uses either ?demo=1 or #demo in the URL
 const sp = new URLSearchParams(location.search);
@@ -1601,16 +1613,16 @@ document.getElementById('submit-recordings-btn').addEventListener('click', async
   const sessionVerified =
     currentRole === 'creator' || currentRole === 'admin';
 
-  const { data: sessionRow, error: sessionErr } = await supabaseClient
+  const newSessionId = newId();
+  const { error: sessionErr } = await supabaseClient
     .from('recording_session')
     .insert([{
+      id: newSessionId,
       example_id: ex.id,
       language,
       user: userString,
       verification_status: sessionVerified
-    }])
-    .select('id')
-    .single();
+    }]);
 
   if (sessionErr) {
     status.textContent = sessionErr.message || 'Error creating session';
@@ -1618,7 +1630,7 @@ document.getElementById('submit-recordings-btn').addEventListener('click', async
     return;
   }
 
-  const sessionId = sessionRow.id;
+  const sessionId = newSessionId;
   currentSessionId = sessionId;
 
   // 4) Upload all clips + insert into audio
@@ -1979,36 +1991,33 @@ async function a_createExampleAndSessionFromStep1() {
   const { language, title, rows, cols } = a_collectStep1();
 
   // Insert EXAMPLE first
-  const { data: ex, error: exErr } = await supabaseClient
+  const exampleId = newId();
+  const { error: exErr } = await supabaseClient
     .from('example')
     .insert([{
+      id: exampleId,
       width: cols,
       height: rows,
       title,
       user: currentFirstName,
       verification_status: true,
       // created_at: leave to DB default (now())
-      // id: leave to DB default (uuid gen)
-    }])
-    .select('id')
-    .single();
+    }]);
 
   if (exErr) throw exErr;
-  const exampleId = ex.id;
 
   // Insert RECORDING SESSION next
-  const { data: rs, error: rsErr } = await supabaseClient
+  const recordingSessionId = newId();
+  const { error: rsErr } = await supabaseClient
     .from('recording_session')
     .insert([{
+      id: recordingSessionId,
       example_id: exampleId,
       verification_status: true,
       language,                   // from Step 1 input
       user: currentFirstName,
       // created_at: DB default
-      // id: DB default
-    }])
-    .select('id')
-    .single();
+    }]);
 
   if (rsErr) {
     // best-effort rollback of the example if session insert fails
@@ -2018,9 +2027,9 @@ async function a_createExampleAndSessionFromStep1() {
 
   // Save in state for later steps
   a.state.exampleId = exampleId;
-  a.state.recordingSessionId = rs.id;
+  a.state.recordingSessionId = recordingSessionId;
 
-  return { exampleId, recordingSessionId: rs.id };
+  return { exampleId, recordingSessionId };
 }
 
 function a_showStep(step) {
