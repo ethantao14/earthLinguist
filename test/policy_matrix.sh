@@ -53,6 +53,16 @@ check "admin may publish directly"                    YES "$(q authenticated $E 
 check "recorder submits, must stay unverified"  no "$(q authenticated $C $'select public._p($q$insert into public.recording_session(example_id,"user",language,verification_status) values (\'e0000000-0000-0000-0000-000000000001\',\'Rita\',\'L\',true)$q$);')"
 check "recorder submits unverified work"       YES "$(q authenticated $C $'select public._p($q$insert into public.recording_session(example_id,"user",language,verification_status) values (\'e0000000-0000-0000-0000-000000000001\',\'Rita\',\'L\',false)$q$);')"
 
+echo "checkmarks: one per cell, even when a creator resubmits"
+CELLS=$'save_checkmarks(\'e0000000-0000-0000-0000-000000000003\',\'[{"row_index":7,"column_index":7}]\')'
+COUNT77=$'select count(*) from public.checkmarks where example_id=\'e0000000-0000-0000-0000-000000000003\' and row_index=7 and column_index=7;'
+check "creator resubmit keeps one copy"          1 "$(q authenticated $D "select public.$CELLS; select public.$CELLS; reset role; $COUNT77" | tail -1)"
+check "admin can save checkmarks"              YES "$(q authenticated $E "select public._p(\$q\$select public.$CELLS\$q\$);")"
+check "recorder cannot save checkmarks"         no "$(q authenticated $C "select public._p(\$q\$select public.$CELLS\$q\$);")"
+check "anon cannot save checkmarks"             no "$(q anon "" "select public._p(\$q\$select public.$CELLS\$q\$);")"
+check "a blank cell is refused"                no "$(q authenticated $E "select public._p(\$q\$select public.save_checkmarks('e0000000-0000-0000-0000-000000000003','[{\"row_index\":null,\"column_index\":1}]')\$q\$);")"
+check "a repeated cell is refused"              no "$(q authenticated $E $'select public._p($q$insert into public.checkmarks(example_id,row_index,column_index) values (\'e0000000-0000-0000-0000-000000000003\',8,8),(\'e0000000-0000-0000-0000-000000000003\',8,8)$q$);')"
+
 echo
 if [ $fail -eq 0 ]; then echo "all checks passed"; else echo "$fail check(s) failed"; fi
 exit $fail

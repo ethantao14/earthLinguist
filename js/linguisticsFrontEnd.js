@@ -2185,28 +2185,28 @@ async function a_saveCheckmarks() {
   const exampleId = a.state.exampleId;
   if (!exampleId) throw new Error('No exampleId in state — create Step 1 draft first.');
 
-  // Build insert rows from the Set of "r,c"
-  const rows = Array.from(a.state.checks).map((key) => {
+  // Build cells from the Set of "r,c"
+  const cells = Array.from(a.state.checks).map((key) => {
     const [r, c] = key.split(',').map((n) => parseInt(n, 10));
     return {
-      example_id: exampleId,
       row_index: r,       // already 1-based in your grid
       column_index: c,    // already 1-based in your grid
-      // id & created_at come from DB defaults
     };
   });
 
-  if (rows.length === 0) return { inserted: 0 };
+  if (cells.length === 0) return { inserted: 0 };
 
   // Optional: replace existing checkmarks for this example on re-submit
   // (comment this out if you ONLY ever insert once)
   await supabaseClient.from('checkmarks').delete().eq('example_id', exampleId);
 
-  // Insert all rows (Supabase supports large batches; chunk if you expect thousands)
-  const { error } = await supabaseClient.from('checkmarks').insert(rows);
+  // A creator's delete above matches nothing (drafts are hidden from them),
+  // so save_checkmarks skips cells already saved instead of duplicating them.
+  const { error } = await supabaseClient
+    .rpc('save_checkmarks', { p_example_id: exampleId, p_cells: cells });
   if (error) throw error;
 
-  return { inserted: rows.length };
+  return { inserted: cells.length };
 }
 
 async function a_saveImages() {
