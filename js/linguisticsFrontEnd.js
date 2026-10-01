@@ -3024,6 +3024,7 @@ document.getElementById('toggle-class-viewable-btn')?.addEventListener('click', 
 // ===== Categories tab (admins manage the list) =====
 
 let categoriesWired = false;
+let categoriesFetchId = 0; // only the latest fetch may draw the table
 
 function wireCategoriesOnce() {
   if (categoriesWired) return;
@@ -3052,12 +3053,15 @@ function categoryErrorMessage(error) {
 async function fetchAndRenderCategories() {
   const tbody = document.querySelector('#categories-table tbody');
   if (!tbody) return;
-  tbody.innerHTML = '';
+  const fetchId = ++categoriesFetchId;
 
   const { data: categories, error } = await supabaseClient
     .from('categories')
     .select('id, category_type')
     .order('category_type', { ascending: true });
+
+  if (fetchId !== categoriesFetchId) return;
+  tbody.innerHTML = '';
 
   if (error) {
     console.error('Failed to load categories:', error);
@@ -3104,6 +3108,10 @@ function buildCategoryRow(category) {
 }
 
 async function addCategory() {
+  if (DEMO_MODE) {
+    setCategoriesStatus('Changes Not Allowed In Demo Version.');
+    return;
+  }
   const input = document.getElementById('new-category-input');
   const name = input.value.trim();
   if (!name) {
@@ -3154,6 +3162,10 @@ function startRenameCategory(tdName, category) {
 }
 
 async function renameCategory(category, newName) {
+  if (DEMO_MODE) {
+    setCategoriesStatus('Changes Not Allowed In Demo Version.');
+    return;
+  }
   if (!newName) {
     setCategoriesStatus('Type a category name first.');
     return;
@@ -3181,6 +3193,10 @@ async function renameCategory(category, newName) {
 }
 
 async function deleteCategory(category) {
+  if (DEMO_MODE) {
+    setCategoriesStatus('Changes Not Allowed In Demo Version.');
+    return;
+  }
   if (!window.confirm(`Delete the category "${category.category_type}"?`)) return;
 
   const { data, error } = await supabaseClient
