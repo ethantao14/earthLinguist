@@ -63,6 +63,23 @@ check "anon cannot save checkmarks"             no "$(q anon "" "select public._
 check "a blank cell is refused"                no "$(q authenticated $E "select public._p(\$q\$select public.save_checkmarks('e0000000-0000-0000-0000-000000000003','[{\"row_index\":null,\"column_index\":1}]')\$q\$);")"
 check "a repeated cell is refused"              no "$(q authenticated $E $'select public._p($q$insert into public.checkmarks(example_id,row_index,column_index) values (\'e0000000-0000-0000-0000-000000000003\',8,8),(\'e0000000-0000-0000-0000-000000000003\',8,8)$q$);')"
 
+echo "categories: everyone reads the list, only admins change it"
+SEED=$'reset role; insert into public.categories(category_type) values (\'Verbs\');'
+ADD=$'select public._p($q$insert into public.categories(category_type) values (\'Nouns\')$q$);'
+RENAME=$'select public._p($q$update public.categories set category_type=\'Verb forms\' where category_type=\'Verbs\'$q$);'
+REMOVE=$'select public._p($q$delete from public.categories where category_type=\'Verbs\'$q$);'
+check "anon can read categories"                 1 "$(q anon "" "$SEED set local role anon; select count(*) from public.categories;")"
+check "student can read categories"              1 "$(q authenticated $B "$SEED set local role authenticated; select count(*) from public.categories;")"
+check "admin can add a category"               YES "$(q authenticated $E "$ADD")"
+check "creator cannot add a category"           no "$(q authenticated $D "$ADD")"
+check "anon cannot add a category"              no "$(q anon "" "$ADD")"
+check "admin can rename a category"            YES "$(q authenticated $E "$SEED set local role authenticated; $RENAME")"
+check "creator cannot rename a category"        no "$(q authenticated $D "$SEED set local role authenticated; $RENAME")"
+check "admin can delete a category"            YES "$(q authenticated $E "$SEED set local role authenticated; $REMOVE")"
+check "creator cannot delete a category"        no "$(q authenticated $D "$SEED set local role authenticated; $REMOVE")"
+check "same name in other case is refused"      no "$(q authenticated $E "$SEED set local role authenticated; "$'select public._p($q$insert into public.categories(category_type) values (\'verbs\')$q$);')"
+check "blank name is refused"                   no "$(q authenticated $E $'select public._p($q$insert into public.categories(category_type) values (\'   \')$q$);')"
+
 echo
 if [ $fail -eq 0 ]; then echo "all checks passed"; else echo "$fail check(s) failed"; fi
 exit $fail
