@@ -121,7 +121,7 @@ let currentRecordingApprovalSessions = [];
 let currentClassViewableExampleId = null;
 let currentClassViewableExamples = [];
 let approvalMode = 'approve'; // 'approve' | 'unapprove'
-const ALL_TABS = ['tab1', 'tab2', 'tab3', 'tab4', 'tab5', 'tab6', 'tab7'];
+const ALL_TABS = ['tab1', 'tab2', 'tab3', 'tab4', 'tab5', 'tab6', 'tab7', 'tab8'];
 
 
 
@@ -411,6 +411,11 @@ async function checkLoginStatus() {
     openTab("tab7", this);
     fetchAndRenderClassViewableExamplesTable();
   });
+  document.getElementById("tab8-btn").addEventListener("click", function() {
+    openTab("tab8", this);
+    wireCategoriesOnce();
+    fetchAndRenderCategories();
+  });
 
   //Updating UI with name. If profile data exists, it sets the welcome message text to include first and last name. If not, the email is used instead (ternary operator)
   const nameSpan = document.getElementById('welcome-name');
@@ -457,6 +462,7 @@ function bootDemo() {
   document.getElementById("tab5-btn").addEventListener("click", function() { openTab("tab5", this); renderApprovalModeUI();});
   document.getElementById("tab6-btn").addEventListener("click", function() { openTab("tab6", this); fetchAndRenderRecordingApprovalExamplesTable();});
   document.getElementById("tab7-btn").addEventListener("click", function() { openTab("tab7", this); fetchAndRenderClassViewableExamplesTable();});
+  document.getElementById("tab8-btn").addEventListener("click", function() { openTab("tab8", this); wireCategoriesOnce(); fetchAndRenderCategories();});
 
   //Fetch tables for tab 2 subtab 2. The transcriptions table for tab 2 subtab 3 is also constructed via a function call inside of fetchAndRenderTable()
   fetchAndRenderTable();
@@ -3015,13 +3021,191 @@ document.getElementById('toggle-class-viewable-btn')?.addEventListener('click', 
 
 //================================Security based on enum role
 
+// ===== Categories tab (admins manage the list) =====
+
+let categoriesWired = false;
+
+function wireCategoriesOnce() {
+  if (categoriesWired) return;
+  categoriesWired = true;
+
+  const input = document.getElementById('new-category-input');
+  document.getElementById('add-category-btn').addEventListener('click', addCategory);
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') addCategory();
+  });
+}
+
+function setCategoriesStatus(text) {
+  const status = document.getElementById('categories-status');
+  if (status) status.textContent = text;
+}
+
+// Turns database refusals into something an admin can act on.
+function categoryErrorMessage(error) {
+  if (error?.code === '23505') return 'A category with that name already exists.';
+  if (error?.code === '23514') return 'Names must be 1 to 50 characters.';
+  if (error?.code === '42501') return 'Only admins can change categories.';
+  return 'Something went wrong. Please try again.';
+}
+
+async function fetchAndRenderCategories() {
+  const tbody = document.querySelector('#categories-table tbody');
+  if (!tbody) return;
+  tbody.innerHTML = '';
+
+  const { data: categories, error } = await supabaseClient
+    .from('categories')
+    .select('id, category_type')
+    .order('category_type', { ascending: true });
+
+  if (error) {
+    console.error('Failed to load categories:', error);
+    setCategoriesStatus('Failed to load categories.');
+    return;
+  }
+
+  if (!categories.length) {
+    const tr = document.createElement('tr');
+    const td = document.createElement('td');
+    td.colSpan = 2;
+    td.textContent = 'No categories yet.';
+    tr.appendChild(td);
+    tbody.appendChild(tr);
+    return;
+  }
+
+  categories.forEach((category) => tbody.appendChild(buildCategoryRow(category)));
+}
+
+function buildCategoryRow(category) {
+  const tr = document.createElement('tr');
+
+  const tdName = document.createElement('td');
+  tdName.textContent = category.category_type;
+  tr.appendChild(tdName);
+
+  const tdActions = document.createElement('td');
+  const renameBtn = document.createElement('button');
+  renameBtn.textContent = 'Rename';
+  renameBtn.classList.add('custom-button');
+  renameBtn.addEventListener('click', () => startRenameCategory(tdName, category));
+
+  const deleteBtn = document.createElement('button');
+  deleteBtn.textContent = 'Delete';
+  deleteBtn.classList.add('custom-button');
+  deleteBtn.style.marginLeft = '8px';
+  deleteBtn.addEventListener('click', () => deleteCategory(category));
+
+  tdActions.appendChild(renameBtn);
+  tdActions.appendChild(deleteBtn);
+  tr.appendChild(tdActions);
+  return tr;
+}
+
+async function addCategory() {
+  const input = document.getElementById('new-category-input');
+  const name = input.value.trim();
+  if (!name) {
+    setCategoriesStatus('Type a category name first.');
+    return;
+  }
+
+  const { error } = await supabaseClient.from('categories').insert([{ category_type: name }]);
+  if (error) {
+    console.error('Failed to add category:', error);
+    setCategoriesStatus(categoryErrorMessage(error));
+    return;
+  }
+
+  input.value = '';
+  input.focus();
+  setCategoriesStatus(`Added "${name}".`);
+  fetchAndRenderCategories();
+}
+
+function startRenameCategory(tdName, category) {
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.maxLength = 50;
+  input.value = category.category_type;
+
+  const saveBtn = document.createElement('button');
+  saveBtn.textContent = 'Save';
+  saveBtn.classList.add('custom-button');
+  saveBtn.style.marginLeft = '8px';
+
+  const cancelBtn = document.createElement('button');
+  cancelBtn.textContent = 'Cancel';
+  cancelBtn.classList.add('custom-button');
+  cancelBtn.style.marginLeft = '8px';
+
+  tdName.textContent = '';
+  tdName.append(input, saveBtn, cancelBtn);
+  input.focus();
+
+  const save = () => renameCategory(category, input.value.trim());
+  saveBtn.addEventListener('click', save);
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') save();
+    if (e.key === 'Escape') fetchAndRenderCategories();
+  });
+  cancelBtn.addEventListener('click', () => fetchAndRenderCategories());
+}
+
+async function renameCategory(category, newName) {
+  if (!newName) {
+    setCategoriesStatus('Type a category name first.');
+    return;
+  }
+  if (newName === category.category_type) {
+    fetchAndRenderCategories();
+    return;
+  }
+
+  // A refused update reports zero rows rather than an error, so read them back.
+  const { data, error } = await supabaseClient
+    .from('categories')
+    .update({ category_type: newName })
+    .eq('id', category.id)
+    .select('id');
+
+  if (error || !data?.length) {
+    console.error('Failed to rename category:', error);
+    setCategoriesStatus(error ? categoryErrorMessage(error) : 'Only admins can change categories.');
+    return;
+  }
+
+  setCategoriesStatus(`Renamed "${category.category_type}" to "${newName}".`);
+  fetchAndRenderCategories();
+}
+
+async function deleteCategory(category) {
+  if (!window.confirm(`Delete the category "${category.category_type}"?`)) return;
+
+  const { data, error } = await supabaseClient
+    .from('categories')
+    .delete()
+    .eq('id', category.id)
+    .select('id');
+
+  if (error || !data?.length) {
+    console.error('Failed to delete category:', error);
+    setCategoriesStatus(error ? categoryErrorMessage(error) : 'Only admins can change categories.');
+    return;
+  }
+
+  setCategoriesStatus(`Deleted "${category.category_type}".`);
+  fetchAndRenderCategories();
+}
+
 function applyRoleVisibility() {
   const role = currentRole || 'viewer';
   console.log('applyRoleVisibility – active role:', role);
 
   let allowedTabs;
   if (role === 'admin') {
-    allowedTabs = ['tab1', 'tab2', 'tab3', 'tab4', 'tab5', 'tab6', 'tab7'];
+    allowedTabs = ['tab1', 'tab2', 'tab3', 'tab4', 'tab5', 'tab6', 'tab7', 'tab8'];
   } else if (role === 'creator') {
     allowedTabs = ['tab1', 'tab2', 'tab3', 'tab4'];
   } else if (role === 'recorder') {

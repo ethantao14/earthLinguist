@@ -77,6 +77,7 @@
 				<button class="tab-button" id="tab5-btn">Example Approval</button>
 				<button class="tab-button" id="tab6-btn">Recording Approval</button>
 				<button class="tab-button" id="tab7-btn">Class Viewable</button>
+				<button class="tab-button" id="tab8-btn">Categories</button>
 			</div>
 
 			<!-- Tab 1 Content: Introduction Message -->
@@ -371,6 +372,28 @@
 					<button id="toggle-class-viewable-btn" class="custom-button" disabled>Make Class-Viewable</button>
 					<span id="class-viewable-status" style="margin-left:8px;"></span>
 				</div>
+			</div>
+
+			<!-- Tab 8 Content: Categories (admins manage the list) -->
+			<div id="tab8" class="tab-content">
+				<h2>Categories</h2>
+				<p>Add, rename or delete the categories that examples can be tagged with.</p>
+
+				<div style="margin-bottom: 12px;">
+					<input id="new-category-input" type="text" maxlength="50" placeholder="New category name">
+					<button id="add-category-btn" class="custom-button">Add Category</button>
+					<span id="categories-status" style="margin-left:8px;"></span>
+				</div>
+
+				<table id="categories-table">
+					<thead>
+					<tr>
+						<th>Category</th>
+						<th>Actions</th>
+					</tr>
+					</thead>
+					<tbody></tbody>
+				</table>
 			</div>
 		</div>
 	</body>
