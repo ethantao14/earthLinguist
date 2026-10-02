@@ -734,6 +734,7 @@ async function fetchAndRenderExamplesTable() {
   if (error) { console.error('Error fetching examples:', error); return; }
 
   const ids = (examples || []).map(e => e.id);
+  const categoriesLoad = loadExampleCategories(ids); // runs alongside the audio fetch below
 
   // 2) Fetch VERIFIED audio joined to recording_session → per-session position sets (no user-level merge)
   // Build nested map: example_id -> Map(language -> Map(session_id -> { user, createdAt, posSet }))
@@ -812,12 +813,15 @@ async function fetchAndRenderExamplesTable() {
     return out;
   }
 
+  const { categories, tagsByExample } = await categoriesLoad;
+
   // 3) Render (Title | Languages | Session)
   const thead = document.querySelector('#examples-table thead tr');
   if (thead) thead.innerHTML = '<th>Title</th><th>Languages</th><th>Session</th>';
 
   const tbody = document.querySelector('#examples-table tbody');
   tbody.innerHTML = '';
+  const filterRows = [];
 
   (examples || []).forEach(ex => {
     // Skip examples with no verified audio at all
@@ -830,6 +834,9 @@ async function fetchAndRenderExamplesTable() {
     // Title
     const tdTitle = document.createElement('td');
     tdTitle.textContent = ex.title || '';
+    const tagIds = tagsByExample.get(ex.id) || new Set();
+    renderCategoryLabels(tdTitle, categories, tagIds);
+    filterRows.push({ tr, tagIds });
     tr.appendChild(tdTitle);
 
     // Languages dropdown (only languages with a full set)
@@ -926,6 +933,11 @@ async function fetchAndRenderExamplesTable() {
 
     tbody.appendChild(tr);
   });
+
+  const noMatchRow = buildNoMatchRow(3);
+  tbody.appendChild(noMatchRow);
+  setUpCategoryFilter('listen-category-filter-wrap', 'listen-category-filter',
+    categories, listenCategoryFilter, filterRows, noMatchRow);
 }
 
 //This function creates the transcription table shown on tab 2 subtab 3
@@ -1218,6 +1230,8 @@ async function fetchAndRenderExamplesTableD() {
     return;
   }
 
+  const { categories, tagsByExample } = await loadExampleCategories((examples || []).map(ex => ex.id));
+
   // Set table header
   if (thead) thead.innerHTML = '<th>Title</th>';
 
@@ -1231,15 +1245,20 @@ async function fetchAndRenderExamplesTableD() {
     td.textContent = 'No verified examples available.';
     tr.appendChild(td);
     tbody.appendChild(tr);
+    document.getElementById('record-category-filter-wrap').style.display = 'none';
     return;
   }
 
   // 2) Render simple table: only verified examples
+  const filterRows = [];
   examples.forEach(ex => {
     const tr = document.createElement('tr');
     const td = document.createElement('td');
 
     td.textContent = ex.title;
+    const tagIds = tagsByExample.get(ex.id) || new Set();
+    renderCategoryLabels(td, categories, tagIds);
+    filterRows.push({ tr, tagIds });
     tr.appendChild(td);
 
     // Clicking selects example
@@ -1256,6 +1275,11 @@ async function fetchAndRenderExamplesTableD() {
 
     tbody.appendChild(tr);
   });
+
+  const noMatchRow = buildNoMatchRow(1);
+  tbody.appendChild(noMatchRow);
+  setUpCategoryFilter('record-category-filter-wrap', 'record-category-filter',
+    categories, recordCategoryFilter, filterRows, noMatchRow);
 }
 
 async function refreshStep3FromSession() {
@@ -3288,6 +3312,107 @@ function renderCategoryChips(container, categories, selectedIds, onToggle, disab
     chip.addEventListener('click', () => onToggle(category.id));
     container.appendChild(chip);
   });
+}
+
+// ===== Category labels and filter on the Listen and Record example lists =====
+const CATEGORY_LABEL_CAP = 3; // labels shown per example before "+N"
+const listenCategoryFilter = new Set(); // category ids picked in the Listen filter
+const recordCategoryFilter = new Set(); // category ids picked in the Record filter
+
+// Loads the category list plus each example's tags, as example id -> Set of category ids.
+async function loadExampleCategories(exampleIds) {
+  const noTags = { data: [], error: null };
+  const [list, tags] = await Promise.all([
+    supabaseClient.from('categories').select('id, category_type').order('category_type', { ascending: true }),
+    exampleIds.length
+      ? supabaseClient.from('categories_example').select('category_id, example_id').in('example_id', exampleIds)
+      : noTags,
+  ]);
+  if (list.error || tags.error) {
+    console.error('Failed to load categories for the example list:', list.error || tags.error);
+    return { categories: [], tagsByExample: new Map() };
+  }
+
+  const tagsByExample = new Map();
+  tags.data.forEach((tag) => {
+    if (!tagsByExample.has(tag.example_id)) tagsByExample.set(tag.example_id, new Set());
+    tagsByExample.get(tag.example_id).add(tag.category_id);
+  });
+  return { categories: list.data, tagsByExample };
+}
+
+// An example matches only when it has every selected category. Nothing selected matches all.
+function matchesAllCategories(tagIds, selectedIds) {
+  for (const id of selectedIds) {
+    if (!tagIds.has(id)) return false;
+  }
+  return true;
+}
+
+// Adds an example's category labels under its title, capped with "+N" for the rest.
+function renderCategoryLabels(cell, categories, tagIds) {
+  const names = categories.filter((c) => tagIds.has(c.id)).map((c) => c.category_type);
+  if (!names.length) return;
+
+  const wrap = document.createElement('div');
+  wrap.className = 'category-labels';
+  names.slice(0, CATEGORY_LABEL_CAP).forEach((name) => {
+    const label = document.createElement('span');
+    label.className = 'category-label';
+    label.textContent = name;
+    wrap.appendChild(label);
+  });
+
+  const hidden = names.slice(CATEGORY_LABEL_CAP);
+  if (hidden.length) {
+    const more = document.createElement('span');
+    more.className = 'category-label more';
+    more.textContent = `+${hidden.length}`;
+    more.title = hidden.join(', ');
+    wrap.appendChild(more);
+  }
+  cell.appendChild(wrap);
+}
+
+// Draws the filter chips and shows only rows whose example has every picked category.
+// rows is a list of { tr, tagIds }; noMatchRow appears when the filter hides them all.
+function setUpCategoryFilter(wrapId, chipsId, categories, selectedIds, rows, noMatchRow) {
+  const wrap = document.getElementById(wrapId);
+  const chips = document.getElementById(chipsId);
+  if (!wrap || !chips) return;
+
+  // Forget picks for categories an admin has since deleted.
+  const known = new Set(categories.map((c) => c.id));
+  selectedIds.forEach((id) => { if (!known.has(id)) selectedIds.delete(id); });
+
+  wrap.style.display = categories.length && rows.length ? '' : 'none';
+
+  const apply = () => {
+    let shown = 0;
+    rows.forEach(({ tr, tagIds }) => {
+      const matches = matchesAllCategories(tagIds, selectedIds);
+      tr.style.display = matches ? '' : 'none';
+      if (matches) shown++;
+    });
+    noMatchRow.style.display = rows.length && !shown ? '' : 'none';
+    renderCategoryChips(chips, categories, selectedIds, (id) => {
+      if (selectedIds.has(id)) selectedIds.delete(id);
+      else selectedIds.add(id);
+      apply();
+    });
+  };
+  apply();
+}
+
+// A hidden table row that says no example has all the picked categories.
+function buildNoMatchRow(columnCount) {
+  const tr = document.createElement('tr');
+  const td = document.createElement('td');
+  td.colSpan = columnCount;
+  td.textContent = 'No examples have all of the selected categories.';
+  tr.appendChild(td);
+  tr.style.display = 'none';
+  return tr;
 }
 
 let approvalCategoriesFetchId = 0; // only chips for the latest selection may draw

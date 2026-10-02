@@ -428,3 +428,25 @@ td img {
 .category-chips-empty {
   color: var(--color-secondary);
 }
+
+/* read-only category labels under an example title */
+.category-labels {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+.category-label {
+  padding: 2px 8px;
+  border-radius: 999px;
+  background-color: var(--color-accent);
+  color: var(--color-primary);
+  font-size: 0.8rem;
+}
+
+.category-label.more {
+  background-color: transparent;
+  color: var(--color-secondary);
+  cursor: help;
+}

@@ -89,5 +89,44 @@ function slowClient() {
   await new Promise((r) => setTimeout(r, 0));
   check('clicking a chip tags the selected example', tagCalls.join() === 'B', `tagged ${tagCalls.join() || 'nothing'}`);
 
+  // Listen and Record lists: labels are capped, and the filter keeps only
+  // examples that have every picked category.
+  const fakeEl = () => ({ style: {}, children: [], className: '', textContent: '', title: '',
+                          set innerHTML(v) { this.children = []; },
+                          appendChild(c) { this.children.push(c); },
+                          setAttribute() {}, addEventListener(e, f) { this.click = f; } });
+  const page = { 'f-wrap': fakeEl(), 'f-chips': fakeEl() };
+  const lists = { console: { error() {} }, DEMO_MODE: false,
+                  document: { getElementById: (id) => page[id], createElement: fakeEl } };
+  vm.createContext(lists);
+  vm.runInContext(section, lists);
+
+  const cats = ['Nouns', 'Places', 'Plural', 'Tense', 'Verbs'].map((n, i) => ({ id: i + 1, category_type: n }));
+  const cell = fakeEl();
+  lists.renderCategoryLabels(cell, cats, new Set([1, 2, 3, 4, 5]));
+  const labels = cell.children[0]?.children.map((l) => l.textContent).join() || '';
+  check('labels stop at three and count the rest', labels === 'Nouns,Places,Plural,+2', `showed ${labels}`);
+
+  const row = (tags) => ({ tr: { style: {} }, tagIds: new Set(tags) });
+  const both = row([1, 5]), nounsOnly = row([1]), untagged = row([]);
+  const noMatch = { style: {} };
+  const picked = new Set([1, 99]); // 99 was deleted by an admin
+  lists.setUpCategoryFilter('f-wrap', 'f-chips', cats, picked, [both, nounsOnly, untagged], noMatch);
+  check('picks of deleted categories are dropped', !picked.has(99), 'deleted category still picked');
+
+  page['f-chips'].children.find((c) => c.textContent === 'Verbs').click(); // now Nouns + Verbs
+  const visible = [both, nounsOnly, untagged].map((r) => r.tr.style.display !== 'none');
+  check('the filter shows only examples with every picked category', visible.join() === 'true,false,false',
+        `visible: ${visible.join()}`);
+  check('the no-match message stays hidden while something matches', noMatch.style.display === 'none',
+        'message shown');
+
+  page['f-chips'].children.find((c) => c.textContent === 'Tense').click(); // nothing has all three
+  check('the no-match message shows when nothing matches', noMatch.style.display === '', 'message hidden');
+
+  ['Nouns', 'Verbs', 'Tense'].forEach((n) => page['f-chips'].children.find((c) => c.textContent === n).click());
+  const allBack = [both, nounsOnly, untagged].every((r) => r.tr.style.display === '');
+  check('clearing every pick shows every example again', allBack && picked.size === 0, `${picked.size} still picked`);
+
   process.exit(failures ? 1 : 0);
 })();
