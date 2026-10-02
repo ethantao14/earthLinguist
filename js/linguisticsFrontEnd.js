@@ -2395,8 +2395,8 @@ async function fetchAndRenderApprovalExamplesTable() {
     tr.addEventListener('click', async () => {
       currentApprovalExampleId = ex.id;
       if (approveBtn) approveBtn.disabled = false;
-      await fetchAndRenderApprovalTable(ex.id);
       renderApprovalCategories(ex.id);
+      await fetchAndRenderApprovalTable(ex.id);
     });
 
     tbody.appendChild(tr);
@@ -3301,14 +3301,16 @@ function clearApprovalCategories() {
 async function renderApprovalCategories(exampleId) {
   const container = document.getElementById('approval-categories');
   const status = document.getElementById('approval-status');
-  if (!container) return;
+  if (!container || exampleId !== currentApprovalExampleId) return;
   const fetchId = ++approvalCategoriesFetchId;
+  // Chips may only ever show, and change, the example that is selected now.
+  const stillSelected = () => fetchId === approvalCategoriesFetchId && exampleId === currentApprovalExampleId;
 
   const [list, tags] = await Promise.all([
     supabaseClient.from('categories').select('id, category_type').order('category_type', { ascending: true }),
     supabaseClient.from('categories_example').select('category_id').eq('example_id', exampleId),
   ]);
-  if (fetchId !== approvalCategoriesFetchId) return;
+  if (!stillSelected()) return;
 
   if (list.error || tags.error) {
     console.error('Failed to load categories for approval:', list.error || tags.error);
@@ -3322,6 +3324,7 @@ async function renderApprovalCategories(exampleId) {
       if (status) status.textContent = 'Changes Not Allowed In Demo Version.';
       return;
     }
+    if (!stillSelected()) return;
     const next = new Set(selected);
     if (next.has(id)) next.delete(id);
     else next.add(id);
@@ -3329,7 +3332,7 @@ async function renderApprovalCategories(exampleId) {
     draw(true);
     const { error } = await supabaseClient
       .rpc('set_example_categories', { p_example_id: exampleId, p_category_ids: [...next] });
-    if (fetchId !== approvalCategoriesFetchId) return;
+    if (!stillSelected()) return;
 
     if (error) {
       console.error('Failed to update categories:', error);
