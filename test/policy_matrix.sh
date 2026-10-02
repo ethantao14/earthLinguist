@@ -85,6 +85,25 @@ check "new example records its creator"         $D "$(q authenticated $D $'inser
 check "creator cannot make one owned by another" no "$(q authenticated $D "select public._p(\$q\$insert into public.example(width,height,title,\"user\",verification_status,created_by) values (1,1,'x','x',false,'$E')\$q\$);")"
 check "admin can still create examples"        YES "$(q authenticated $E $'select public._p($q$insert into public.example(width,height,title,"user") values (1,1,\'x\',\'x\')$q$);')"
 
+echo "tags: own creator while a draft, or an admin"
+DRAFT=e0000000-0000-0000-0000-000000000003   # unapproved, created by the creator
+PUBLISHED=e0000000-0000-0000-0000-000000000001 # approved, created by the creator
+CATS=$'reset role; insert into public.categories(category_type) values (\'Verbs\'),(\'Nouns\');'
+ids () { echo "array(select id from public.categories where category_type in ($1))"; }
+tag () { echo "select public._p(\$q\$select public.set_example_categories('$1', $(ids "$2"))\$q\$);"; }
+TAGS_ON () { echo "reset role; select string_agg(c.category_type, ',' order by c.category_type) from public.categories_example ce join public.categories c on c.id = ce.category_id where ce.example_id = '$1';"; }
+check "creator tags their own draft"           YES "$(q authenticated $D "$CATS set local role authenticated; $(tag $DRAFT "'Verbs'")")"
+check "retagging replaces the old tags"      Nouns "$(q authenticated $D "$CATS set local role authenticated; $(tag $DRAFT "'Verbs'") $(tag $DRAFT "'Nouns'") $(TAGS_ON $DRAFT)" | tail -1)"
+check "creator cannot tag own approved example"  no "$(q authenticated $D "$CATS set local role authenticated; $(tag $PUBLISHED "'Verbs'")")"
+check "creator cannot tag an ownerless draft"    no "$(q authenticated $D "$CATS update public.example set created_by = null where id = '$DRAFT'; set local role authenticated; $(tag $DRAFT "'Verbs'")")"
+check "creator cannot tag another's draft"       no "$(q authenticated $D "$CATS insert into auth.users(id) values ('00000000-0000-0000-0000-0000000000ff'); insert into public.profiles(id, first_name, status) values ('00000000-0000-0000-0000-0000000000ff', 'Other', 'creator'); update public.example set created_by = '00000000-0000-0000-0000-0000000000ff' where id = '$DRAFT'; set local role authenticated; $(tag $DRAFT "'Verbs'")")"
+check "admin can tag an approved example"      YES "$(q authenticated $E "$CATS set local role authenticated; $(tag $PUBLISHED "'Verbs'")")"
+check "recorder cannot tag"                      no "$(q authenticated $C "$CATS set local role authenticated; $(tag $DRAFT "'Verbs'")")"
+check "anon cannot tag"                          no "$(q anon "" "$CATS set local role anon; $(tag $PUBLISHED "'Verbs'")")"
+check "tags are written only through the function" no "$(q authenticated $E "$CATS set local role authenticated; select public._p(\$q\$insert into public.categories_example(category_id, example_id) select id, '$PUBLISHED' from public.categories\$q\$);")"
+check "anon sees published tags, not draft tags"   1 "$(q anon "" "$CATS insert into public.categories_example(category_id, example_id) select id, '$PUBLISHED'::uuid from public.categories where category_type = 'Verbs' union all select id, '$DRAFT'::uuid from public.categories where category_type = 'Verbs'; set local role anon; select count(*) from public.categories_example;")"
+check "deleting a category removes its tags"     1,0 "$(q authenticated $E "$CATS insert into public.categories_example(category_id, example_id) select id, '$PUBLISHED' from public.categories where category_type = 'Verbs'; create temp table n as select count(*) as before from public.categories_example; set local role authenticated; delete from public.categories where category_type = 'Verbs'; reset role; select (select before from n) || ',' || count(*) from public.categories_example;" | tail -1)"
+
 echo
 if [ $fail -eq 0 ]; then echo "all checks passed"; else echo "$fail check(s) failed"; fi
 exit $fail

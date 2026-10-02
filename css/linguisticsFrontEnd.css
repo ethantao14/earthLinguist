@@ -391,3 +391,40 @@ td img {
 .preview-play {
   margin-left: 8px;
 }
+
+/* category chips, like tags on LeetCode questions */
+.category-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 0.5rem;
+}
+
+.category-chip {
+  padding: 6px 12px;
+  border: 1px solid var(--color-hover);
+  border-radius: 999px;
+  background-color: var(--color-card);
+  color: var(--color-primary);
+  cursor: pointer;
+  transition: background-color 0.3s ease;
+}
+
+.category-chip:hover {
+  background-color: var(--color-hover);
+}
+
+.category-chip.selected {
+  background-color: var(--color-dark);
+  border-color: var(--color-dark);
+  color: var(--color-card);
+}
+
+.category-chip:disabled {
+  cursor: wait;
+  opacity: 0.6;
+}
+
+.category-chips-empty {
+  color: var(--color-secondary);
+}

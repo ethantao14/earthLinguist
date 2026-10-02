@@ -59,5 +59,35 @@ function slowClient() {
   stale.release(0, ['Deleted', 'Nouns']); await older;
   check('a slower, older fetch cannot overwrite a newer one', b.tbody.rows.length === 1, `${b.tbody.rows.length} rows shown`);
 
+  // Approval chips: an admin clicks example A, then B, and A's load is the
+  // one that starts late. The chips must stay B's, and a click must tag B.
+  const chips = { innerHTML: '', items: [], appendChild(c) { this.items.push(c); },
+                  set textContent(v) { this.items = []; } };
+  Object.defineProperty(chips, 'innerHTML', { set() { this.items = []; } });
+  const tagCalls = [];
+  const tagsFor = { A: [1], B: [2] };
+  const approval = {
+    console: { error() {} }, DEMO_MODE: false, currentApprovalExampleId: 'B',
+    document: { getElementById: (id) => (id === 'approval-categories' ? chips : { textContent: '' }),
+                createElement: () => ({ setAttribute() {}, addEventListener(e, f) { this.click = f; } }) },
+    supabaseClient: {
+      from: (table) => ({
+        select() { return this; },
+        order: async () => ({ data: [{ id: 1, category_type: 'Nouns' }, { id: 2, category_type: 'Verbs' }], error: null }),
+        eq: async (col, ex) => ({ data: tagsFor[ex].map((id) => ({ category_id: id })), error: null }),
+      }),
+      rpc: async (name, args) => { tagCalls.push(args.p_example_id); return { error: null }; },
+    },
+  };
+  vm.createContext(approval);
+  vm.runInContext(section, approval);
+  await approval.renderApprovalCategories('B');
+  await approval.renderApprovalCategories('A'); // the stale, late load for A
+  const shown = chips.items.filter((c) => c.className.includes('selected')).map((c) => c.textContent);
+  check('a late load for another example cannot replace the chips', shown.join() === 'Verbs', `showing ${shown.join() || 'nothing'} selected`);
+  chips.items[0]?.click();
+  await new Promise((r) => setTimeout(r, 0));
+  check('clicking a chip tags the selected example', tagCalls.join() === 'B', `tagged ${tagCalls.join() || 'nothing'}`);
+
   process.exit(failures ? 1 : 0);
 })();

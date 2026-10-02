@@ -250,6 +250,9 @@
 						<label for="a-title">Title</label>
 						<input id="a-title" type="text" placeholder="e.g., Chair Example" style="margin-bottom:0.5rem; padding:0.5rem; width:100%;"/>
 
+						<label>Categories (optional)</label>
+						<div id="a-categories" class="category-chips"></div>
+
 						<label>Table Dimensions</label>
 						<div style="display:flex; gap:8px; margin-bottom:0.5rem;">
 							<input id="a-rows" type="number" placeholder="Rows" min="1" style="padding:0.5rem; width:100%;"/>
@@ -304,6 +307,8 @@
 
 				<div id="approval-table-wrap" class="hidden">
 					<h3>Selected Example</h3>
+					<p>Categories (click to add or remove):</p>
+					<div id="approval-categories" class="category-chips"></div>
 					<table id="approval-image-table">
 					<thead><tr></tr></thead>
 					<tbody></tbody>

@@ -1734,7 +1734,8 @@ const a = {
     // Check toggles for inner cells
     checks: new Set(), // Set of "r,c" for r>=1 && c>=1
     // in a.state
-    transcriptions: {} // { [c:number>=1]: string }
+    transcriptions: {}, // { [c:number>=1]: string }
+    categoryIds: new Set() // ids of the categories picked in step 1
   }
 };
 
@@ -2056,6 +2057,7 @@ function a_showStep(step) {
   if (!prevBtn || !nextBtn || !submitBtn || !footer) return;
 
   if (step === 1) {
+    a_loadCategoryChips();
     prevBtn.style.display   = 'none';
     nextBtn.style.display   = 'inline-block';
     submitBtn.style.display = 'none';
@@ -2163,6 +2165,9 @@ function a_wireWizardOnce() {
 
       console.log('#2');
 
+      statusEl.textContent = `Saved ${chk} checkmark${chk === 1 ? '' : 's'}. Saving categories…`;
+      await a_saveCategories();
+
       statusEl.textContent = `Saved ${chk} checkmark${chk === 1 ? '' : 's'}. Uploading images…`;
       const { inserted: imgs } = await a_saveImages();
 
@@ -2213,6 +2218,44 @@ async function a_saveCheckmarks() {
   if (error) throw error;
 
   return { inserted: cells.length };
+}
+
+async function a_loadCategoryChips() {
+  const container = document.getElementById('a-categories');
+  if (!container) return;
+
+  const { data: categories, error } = await supabaseClient
+    .from('categories')
+    .select('id, category_type')
+    .order('category_type', { ascending: true });
+
+  if (error) {
+    console.error('Failed to load categories for the wizard:', error);
+    container.textContent = 'Categories could not be loaded.';
+    return;
+  }
+
+  // Forget picks for categories an admin has since deleted.
+  const known = new Set(categories.map((c) => c.id));
+  a.state.categoryIds.forEach((id) => { if (!known.has(id)) a.state.categoryIds.delete(id); });
+
+  const draw = () => renderCategoryChips(container, categories, a.state.categoryIds, (id) => {
+    if (a.state.categoryIds.has(id)) a.state.categoryIds.delete(id);
+    else a.state.categoryIds.add(id);
+    draw();
+  });
+  draw();
+}
+
+// Tags go through set_example_categories, which replaces the whole set, so
+// resubmitting after unpicking a category removes it too.
+async function a_saveCategories() {
+  const exampleId = a.state.exampleId;
+  if (!exampleId) throw new Error('No exampleId in state. Create the Step 1 draft first.');
+
+  const { error } = await supabaseClient
+    .rpc('set_example_categories', { p_example_id: exampleId, p_category_ids: [...a.state.categoryIds] });
+  if (error) throw error;
 }
 
 async function a_saveImages() {
@@ -2352,6 +2395,7 @@ async function fetchAndRenderApprovalExamplesTable() {
     tr.addEventListener('click', async () => {
       currentApprovalExampleId = ex.id;
       if (approveBtn) approveBtn.disabled = false;
+      renderApprovalCategories(ex.id);
       await fetchAndRenderApprovalTable(ex.id);
     });
 
@@ -2398,6 +2442,7 @@ function resetApprovalSelectionUI() {
   if (tbody) tbody.innerHTML = '';
   if (btn) btn.disabled = true;
   if (status) status.textContent = '';
+  clearApprovalCategories();
 }
 
 function renderApprovalModeUI() {
@@ -2572,6 +2617,7 @@ document.getElementById('approve-example-btn')?.addEventListener('click', async 
   if (wrap) wrap.classList.add('hidden');
   if (thead) thead.innerHTML = '';
   if (tbody) tbody.innerHTML = '';
+  clearApprovalCategories();
 
   if (status) status.textContent = isUnapprove ? 'Example unapproved.' : 'Example approved.';
   await fetchAndRenderApprovalExamplesTable();
@@ -3197,7 +3243,12 @@ async function deleteCategory(category) {
     setCategoriesStatus('Changes Not Allowed In Demo Version.');
     return;
   }
-  if (!window.confirm(`Delete the category "${category.category_type}"?`)) return;
+  const { count } = await supabaseClient
+    .from('categories_example')
+    .select('id', { count: 'exact', head: true })
+    .eq('category_id', category.id);
+  const usage = count ? ` ${count} example${count === 1 ? '' : 's'} will lose this tag.` : '';
+  if (!window.confirm(`Delete the category "${category.category_type}"?${usage}`)) return;
 
   const { data, error } = await supabaseClient
     .from('categories')
@@ -3213,6 +3264,86 @@ async function deleteCategory(category) {
 
   setCategoriesStatus(`Deleted "${category.category_type}".`);
   fetchAndRenderCategories();
+}
+
+// Draws one toggle chip per category; selectedIds marks the ones that are on.
+function renderCategoryChips(container, categories, selectedIds, onToggle, disabled = false) {
+  container.innerHTML = '';
+  if (!categories.length) {
+    const empty = document.createElement('span');
+    empty.className = 'category-chips-empty';
+    empty.textContent = 'No categories yet. An admin can add them on the Categories tab.';
+    container.appendChild(empty);
+    return;
+  }
+
+  categories.forEach((category) => {
+    const isOn = selectedIds.has(category.id);
+    const chip = document.createElement('button');
+    chip.type = 'button';
+    chip.className = isOn ? 'category-chip selected' : 'category-chip';
+    chip.textContent = category.category_type;
+    chip.setAttribute('aria-pressed', String(isOn));
+    chip.disabled = disabled;
+    chip.addEventListener('click', () => onToggle(category.id));
+    container.appendChild(chip);
+  });
+}
+
+let approvalCategoriesFetchId = 0; // only chips for the latest selection may draw
+
+function clearApprovalCategories() {
+  approvalCategoriesFetchId++;
+  const container = document.getElementById('approval-categories');
+  if (container) container.innerHTML = '';
+}
+
+async function renderApprovalCategories(exampleId) {
+  const container = document.getElementById('approval-categories');
+  const status = document.getElementById('approval-status');
+  if (!container || exampleId !== currentApprovalExampleId) return;
+  const fetchId = ++approvalCategoriesFetchId;
+  // Chips may only ever show, and change, the example that is selected now.
+  const stillSelected = () => fetchId === approvalCategoriesFetchId && exampleId === currentApprovalExampleId;
+
+  const [list, tags] = await Promise.all([
+    supabaseClient.from('categories').select('id, category_type').order('category_type', { ascending: true }),
+    supabaseClient.from('categories_example').select('category_id').eq('example_id', exampleId),
+  ]);
+  if (!stillSelected()) return;
+
+  if (list.error || tags.error) {
+    console.error('Failed to load categories for approval:', list.error || tags.error);
+    container.textContent = 'Categories could not be loaded.';
+    return;
+  }
+
+  let selected = new Set(tags.data.map((t) => t.category_id));
+  const draw = (saving) => renderCategoryChips(container, list.data, selected, async (id) => {
+    if (DEMO_MODE) {
+      if (status) status.textContent = 'Changes Not Allowed In Demo Version.';
+      return;
+    }
+    if (!stillSelected()) return;
+    const next = new Set(selected);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+
+    draw(true);
+    const { error } = await supabaseClient
+      .rpc('set_example_categories', { p_example_id: exampleId, p_category_ids: [...next] });
+    if (!stillSelected()) return;
+
+    if (error) {
+      console.error('Failed to update categories:', error);
+      if (status) status.textContent = 'Failed to update categories.';
+    } else {
+      selected = next;
+      if (status) status.textContent = 'Categories updated.';
+    }
+    draw(false);
+  }, saving);
+  draw(false);
 }
 
 function applyRoleVisibility() {
