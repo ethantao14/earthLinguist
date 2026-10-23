@@ -1758,8 +1758,7 @@ const a = {
     // Check toggles for inner cells
     checks: new Set(), // Set of "r,c" for r>=1 && c>=1
     // in a.state
-    transcriptions: {}, // { [c:number>=1]: string }
-    categoryIds: new Set() // ids of the categories picked in step 1
+    transcriptions: {} // { [c:number>=1]: string }
   }
 };
 
@@ -2081,7 +2080,6 @@ function a_showStep(step) {
   if (!prevBtn || !nextBtn || !submitBtn || !footer) return;
 
   if (step === 1) {
-    a_loadCategoryChips();
     prevBtn.style.display   = 'none';
     nextBtn.style.display   = 'inline-block';
     submitBtn.style.display = 'none';
@@ -2189,9 +2187,6 @@ function a_wireWizardOnce() {
 
       console.log('#2');
 
-      statusEl.textContent = `Saved ${chk} checkmark${chk === 1 ? '' : 's'}. Saving categories…`;
-      await a_saveCategories();
-
       statusEl.textContent = `Saved ${chk} checkmark${chk === 1 ? '' : 's'}. Uploading images…`;
       const { inserted: imgs } = await a_saveImages();
 
@@ -2242,44 +2237,6 @@ async function a_saveCheckmarks() {
   if (error) throw error;
 
   return { inserted: cells.length };
-}
-
-async function a_loadCategoryChips() {
-  const container = document.getElementById('a-categories');
-  if (!container) return;
-
-  const { data: categories, error } = await supabaseClient
-    .from('categories')
-    .select('id, category_type')
-    .order('category_type', { ascending: true });
-
-  if (error) {
-    console.error('Failed to load categories for the wizard:', error);
-    container.textContent = 'Categories could not be loaded.';
-    return;
-  }
-
-  // Forget picks for categories an admin has since deleted.
-  const known = new Set(categories.map((c) => c.id));
-  a.state.categoryIds.forEach((id) => { if (!known.has(id)) a.state.categoryIds.delete(id); });
-
-  const draw = () => renderCategoryChips(container, categories, a.state.categoryIds, (id) => {
-    if (a.state.categoryIds.has(id)) a.state.categoryIds.delete(id);
-    else a.state.categoryIds.add(id);
-    draw();
-  });
-  draw();
-}
-
-// Tags go through set_example_categories, which replaces the whole set, so
-// resubmitting after unpicking a category removes it too.
-async function a_saveCategories() {
-  const exampleId = a.state.exampleId;
-  if (!exampleId) throw new Error('No exampleId in state. Create the Step 1 draft first.');
-
-  const { error } = await supabaseClient
-    .rpc('set_example_categories', { p_example_id: exampleId, p_category_ids: [...a.state.categoryIds] });
-  if (error) throw error;
 }
 
 async function a_saveImages() {
@@ -3296,7 +3253,7 @@ function renderCategoryChips(container, categories, selectedIds, onToggle, disab
   if (!categories.length) {
     const empty = document.createElement('span');
     empty.className = 'category-chips-empty';
-    empty.textContent = 'No categories yet. An admin can add them on the Categories tab.';
+    empty.textContent = 'No categories yet. An admin can add them on the Create Categories tab.';
     container.appendChild(empty);
     return;
   }
