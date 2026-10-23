@@ -27,7 +27,7 @@ check () { # description expected actual
   else printf "  FAIL  %-52s expected %s, got %s\n" "$1" "$2" "$3"; fail=$((fail+1)); fi
 }
 
-for migration in 0009_admin_only_tagging.sql 0009_rollback.sql; do
+for migration in 0010_consent_tables.sql 0010_rollback.sql; do
   if [ -s "$(dirname "$0")/../db/$migration" ]; then present=yes; else present=no; fi
   check "migration delivered: $migration" yes "$present"
 done
@@ -119,6 +119,63 @@ for operation in "update public.categories_example set category_id = (select id 
 done
 check "anon sees published tags, not draft tags"   1 "$(q anon "" "$CATS insert into public.categories_example(category_id, example_id) select id, '$PUBLISHED'::uuid from public.categories where category_type = 'Verbs' union all select id, '$DRAFT'::uuid from public.categories where category_type = 'Verbs'; set local role anon; select count(*) from public.categories_example;")"
 check "deleting a category removes its tags"     1,0 "$(q authenticated $E "$CATS insert into public.categories_example(category_id, example_id) select id, '$PUBLISHED' from public.categories where category_type = 'Verbs'; create temp table n as select count(*) as before from public.categories_example; set local role authenticated; delete from public.categories where category_type = 'Verbs'; reset role; select (select before from n) || ',' || count(*) from public.categories_example;" | tail -1)"
+
+echo "consent: column rules and append-only access"
+SESSION=50000000-0000-0000-0000-000000000001
+for consent in creator_consent recording_consent; do
+  TABLE="public.$consent"
+  ADD="insert into $TABLE(box,checked) values ('test consent',true)"
+  SEED="reset role; insert into $TABLE(user_id,box,checked) values ('$A','test consent',true);"
+  READ="select 1 / count(*)::int from $TABLE where box='test consent'"
+  check "$consent has RLS enabled" t "$(q postgres "" "select relrowsecurity from pg_class where oid='$TABLE'::regclass;")"
+  check "$consent has required column types" 5 "$(q postgres "" "select count(*) from information_schema.columns where table_schema='public' and table_name='$consent' and (column_name,data_type) in (('id','uuid'),('user_id','uuid'),('box','text'),('checked','boolean'),('created_at','timestamp with time zone')) and is_nullable='NO';")"
+  check "$consent id is the primary key" 1 "$(q postgres "" "select count(*) from pg_constraint where conrelid='$TABLE'::regclass and contype='p' and conkey=array[(select attnum from pg_attribute where attrelid='$TABLE'::regclass and attname='id')];")"
+  check "$consent id defaults to random uuid" t "$(q postgres "" "select column_default like '%gen_random_uuid()%' from information_schema.columns where table_schema='public' and table_name='$consent' and column_name='id';")"
+  check "$consent defaults user, id and timestamp" t "$(q authenticated "$A" "$ADD; reset role; select user_id='$A'::uuid and id is not null and created_at=now() from $TABLE where box='test consent';" | tail -1)"
+  check "$consent admin reads viewer submission" 1 "$(q authenticated "$A" "$ADD; set local request.jwt.claim.sub = '$E'; select count(*) from $TABLE where box='test consent' and user_id='$A';" | tail -1)"
+  check "$consent permits repeated submissions" 2 "$(q authenticated "$A" "$ADD; $ADD; reset role; select count(*) from $TABLE where box='test consent';" | tail -1)"
+  check "$consent profile FK prevents account cascade" 1 "$(q postgres "" "select count(*) from pg_constraint where conrelid='$TABLE'::regclass and confrelid='public.profiles'::regclass and contype='f' and confdeltype in ('a','r') and conkey=array[(select attnum from pg_attribute where attrelid='$TABLE'::regclass and attname='user_id')] and confkey=array[(select attnum from pg_attribute where attrelid='public.profiles'::regclass and attname='id')];")"
+  for uid in "$A" "$B" "$C" "$D" "$E"; do
+    check "$consent $uid inserts own row" YES "$(q authenticated "$uid" "select public._p(\$q\$$ADD\$q\$);")"
+    check "$consent $uid supplies own user_id" YES "$(q authenticated "$uid" "select public._p(\$q\$insert into $TABLE(user_id,box,checked) values ('$uid','test consent',false)\$q\$);")"
+    if [ "$uid" != "$E" ]; then
+      check "$consent $uid cannot read own row" no "$(q authenticated "$uid" "$ADD; select public._p(\$q\$$READ\$q\$);" | tail -1)"
+    fi
+    other=$A; [ "$uid" = "$A" ] && other=$B
+    check "$consent $uid cannot impersonate" no "$(q authenticated "$uid" "select public._p(\$q\$insert into $TABLE(user_id,box,checked) values ('$other','test consent',true)\$q\$);")"
+    for extra in "id) values ('test consent',true,gen_random_uuid())" "created_at) values ('test consent',true,'2000-01-01')"; do
+      check "$consent $uid cannot set ${extra%%)*}" no "$(q authenticated "$uid" "select public._p(\$q\$insert into $TABLE(box,checked,$extra\$q\$);")"
+    done
+  done
+  for actor in "anon" "$A" "$B" "$C" "$D" "$E"; do
+    role=authenticated; uid=$actor
+    if [ "$actor" = anon ]; then role=anon; uid=""; fi
+    expected=no; [ "$actor" = "$E" ] && expected=YES
+    # Division by zero also refuses a read when RLS hides every matching row.
+    check "$consent $actor read (A owns row)" "$expected" "$(q "$role" "$uid" "$SEED set local role $role; select public._p(\$q\$$READ\$q\$);")"
+    for operation in "update $TABLE set checked=false where box='test consent'" "delete from $TABLE where box='test consent'"; do
+      check "$consent $actor refuses ${operation%% *}" no "$(q "$role" "$uid" "$SEED set local role $role; select public._p(\$q\$$operation\$q\$);")"
+    done
+  done
+  check "$consent anon cannot insert" no "$(q anon "" "select public._p(\$q\$insert into $TABLE(user_id,box,checked) values ('$A','test consent',true)\$q\$);")"
+  for values in "'   ',true" "'',true" "repeat('x',201),true" "null,true" "'test consent',null"; do
+    check "$consent rejects invalid box/checked: $values" no "$(q authenticated "$C" "select public._p(\$q\$insert into $TABLE(box,checked) values ($values)\$q\$);")"
+  done
+  check "$consent rejects null user_id" no "$(q authenticated "$C" "select public._p(\$q\$insert into $TABLE(user_id,box,checked) values (null,'test consent',true)\$q\$);")"
+  for box in "'x'" "repeat('x',200)" "'  ' || repeat('x',200) || '  '"; do
+    check "$consent accepts trimmed box boundary" YES "$(q authenticated "$C" "select public._p(\$q\$insert into $TABLE(box,checked) values ($box,false)\$q\$);")"
+  done
+done
+
+echo "recording consent: session and subject travel together"
+check "recording consent extra columns are nullable" 2 "$(q postgres "" "select count(*) from information_schema.columns where table_schema='public' and table_name='recording_consent' and is_nullable='YES' and (column_name,data_type) in (('recording_session_id','uuid'),('subject_name','text'));")"
+for pair in "null,null" "'$SESSION','Person'" "'$SESSION',repeat('x',100)" "'$SESSION','  ' || repeat('x',100) || '  '"; do
+  check "recording consent accepts pair: $pair" YES "$(q authenticated "$C" "select public._p(\$q\$insert into public.recording_consent(box,checked,recording_session_id,subject_name) values ('test consent',true,$pair)\$q\$);")"
+done
+for pair in "'$SESSION',null" "null,'Person'" "'$SESSION',''" "'$SESSION','   '" "'$SESSION',repeat('x',101)" "'50000000-0000-0000-0000-000000000099','Person'"; do
+  check "recording consent rejects pair: $pair" no "$(q authenticated "$C" "select public._p(\$q\$insert into public.recording_consent(box,checked,recording_session_id,subject_name) values ('test consent',false,$pair)\$q\$);")"
+done
+check "session deletion cascades only linked consent" 1 "$(q authenticated "$C" "insert into public.recording_consent(box,checked,recording_session_id,subject_name) values ('test consent',true,'$SESSION','Person'),('test consent',false,null,null); reset role; delete from public.recording_session where id='$SESSION'; select count(*) from public.recording_consent where box='test consent';" | tail -1)"
 
 echo
 if [ $fail -eq 0 ]; then echo "all checks passed"; else echo "$fail check(s) failed"; fi
