@@ -186,5 +186,7 @@ function slowClient() {
   const allBack = [both, nounsOnly, untagged].every((r) => r.tr.style.display === '');
   check('clearing every pick shows every example again', allBack && picked.size === 0, `${picked.size} still picked`);
 
+  await require('./tag_examples.test.js')(code, html, check);
+
   process.exit(failures ? 1 : 0);
 })();

@@ -121,7 +121,7 @@ let currentRecordingApprovalSessions = [];
 let currentClassViewableExampleId = null;
 let currentClassViewableExamples = [];
 let approvalMode = 'approve'; // 'approve' | 'unapprove'
-const ALL_TABS = ['tab1', 'tab2', 'tab3', 'tab4', 'tab5', 'tab6', 'tab7', 'tab8'];
+const ALL_TABS = ['tab1', 'tab2', 'tab3', 'tab4', 'tab5', 'tab6', 'tab7', 'tab8', 'tab9'];
 
 
 
@@ -416,6 +416,10 @@ async function checkLoginStatus() {
     wireCategoriesOnce();
     fetchAndRenderCategories();
   });
+  document.getElementById("tab9-btn").addEventListener("click", function() {
+    openTab("tab9", this);
+    fetchAndRenderTagExamples();
+  });
 
   //Updating UI with name. If profile data exists, it sets the welcome message text to include first and last name. If not, the email is used instead (ternary operator)
   const nameSpan = document.getElementById('welcome-name');
@@ -463,6 +467,7 @@ function bootDemo() {
   document.getElementById("tab6-btn").addEventListener("click", function() { openTab("tab6", this); fetchAndRenderRecordingApprovalExamplesTable();});
   document.getElementById("tab7-btn").addEventListener("click", function() { openTab("tab7", this); fetchAndRenderClassViewableExamplesTable();});
   document.getElementById("tab8-btn").addEventListener("click", function() { openTab("tab8", this); wireCategoriesOnce(); fetchAndRenderCategories();});
+  document.getElementById("tab9-btn").addEventListener("click", function() { openTab("tab9", this); fetchAndRenderTagExamples();});
 
   //Fetch tables for tab 2 subtab 2. The transcriptions table for tab 2 subtab 3 is also constructed via a function call inside of fetchAndRenderTable()
   fetchAndRenderTable();
@@ -3428,13 +3433,122 @@ async function renderApprovalCategories(exampleId) {
   draw(false);
 }
 
+let tagExamplesFetchId = 0;
+const pendingTagExampleSaves = new Set();
+
+async function fetchAllTagExampleRows(query) {
+  const data = [];
+  for (let from = 0; ; from += 1000) {
+    const page = await query.range(from, from + 999);
+    if (page.error) throw page.error;
+    data.push(...page.data);
+    if (page.data.length < 1000) return { data, error: null };
+  }
+}
+
+async function fetchAndRenderTagExamples() {
+  const tbody = document.querySelector('#tag-examples-table tbody');
+  const status = document.getElementById('tag-examples-status');
+  if (!tbody) return;
+  const fetchId = ++tagExamplesFetchId;
+  const stillCurrent = () => fetchId === tagExamplesFetchId;
+  tbody.innerHTML = '';
+  if (status) status.textContent = '';
+
+  try {
+    while (pendingTagExampleSaves.size) {
+      await Promise.allSettled([...pendingTagExampleSaves]);
+    }
+    if (!stillCurrent()) return;
+    const [examples, categories, tags] = await Promise.all([
+      fetchAllTagExampleRows(supabaseClient.from('example').select('id, title, user, verification_status, irb_hold').order('title', { ascending: true }).order('id', { ascending: true })),
+      supabaseClient.from('categories').select('id, category_type').order('category_type', { ascending: true }),
+      fetchAllTagExampleRows(supabaseClient.from('categories_example').select('example_id, category_id').order('id', { ascending: true })),
+    ]);
+    if (!stillCurrent()) return;
+    if (examples.error || categories.error || tags.error) {
+      throw examples.error || categories.error || tags.error;
+    }
+
+    if (!examples.data.length) {
+      const tr = document.createElement('tr');
+      const td = document.createElement('td');
+      td.colSpan = 4;
+      td.textContent = 'No examples yet.';
+      tr.appendChild(td);
+      tbody.appendChild(tr);
+      return;
+    }
+
+    const tagsByExample = new Map();
+    tags.data.forEach((tag) => {
+      if (!tagsByExample.has(tag.example_id)) tagsByExample.set(tag.example_id, new Set());
+      tagsByExample.get(tag.example_id).add(tag.category_id);
+    });
+    examples.data.sort((a, b) => (a.title || '').localeCompare(b.title || '')).forEach((example) => {
+      const tr = document.createElement('tr');
+      const exampleStatus = example.irb_hold ? 'Held' : example.verification_status ? 'Approved' : 'Awaiting approval';
+      [example.title, example.user, exampleStatus].forEach((text) => {
+        const td = document.createElement('td');
+        td.textContent = text || '';
+        tr.appendChild(td);
+      });
+      const chips = document.createElement('td');
+      tr.appendChild(chips);
+      tbody.appendChild(tr);
+      let selected = tagsByExample.get(example.id) || new Set();
+      let saving = false;
+      const draw = () => renderCategoryChips(chips, categories.data, selected, async (id) => {
+        if (!stillCurrent() || saving) return;
+        if (status) status.textContent = '';
+        if (DEMO_MODE) {
+          if (status) status.textContent = 'Changes Not Allowed In Demo Version.';
+          return;
+        }
+        const previous = selected;
+        selected = new Set(selected);
+        if (selected.has(id)) selected.delete(id);
+        else selected.add(id);
+        saving = true;
+        draw();
+        let pendingSave;
+        try {
+          pendingSave = Promise.resolve(supabaseClient.rpc('set_example_categories', {
+            p_example_id: example.id, p_category_ids: [...selected],
+          }));
+          pendingTagExampleSaves.add(pendingSave);
+          const { error } = await pendingSave;
+          if (error) throw error;
+          if (stillCurrent() && status && !status.textContent.includes('Failed')) {
+            status.textContent = 'Categories updated.';
+          }
+        } catch (error) {
+          selected = previous;
+          console.error('Failed to update categories:', error);
+          if (stillCurrent() && status) status.textContent = `Failed to update categories for ${example.title}.`;
+        } finally {
+          pendingTagExampleSaves.delete(pendingSave);
+          saving = false;
+          if (stillCurrent()) draw();
+        }
+      }, saving);
+      draw();
+    });
+  } catch (error) {
+    if (!stillCurrent()) return;
+    tbody.innerHTML = '';
+    console.error('Failed to load examples for tagging:', error);
+    if (status) status.textContent = 'Failed to load examples for tagging.';
+  }
+}
+
 function applyRoleVisibility() {
   const role = currentRole || 'viewer';
   console.log('applyRoleVisibility – active role:', role);
 
   let allowedTabs;
   if (role === 'admin') {
-    allowedTabs = ['tab1', 'tab2', 'tab3', 'tab4', 'tab5', 'tab6', 'tab7', 'tab8'];
+    allowedTabs = ['tab1', 'tab2', 'tab3', 'tab4', 'tab5', 'tab6', 'tab7', 'tab8', 'tab9'];
   } else if (role === 'creator') {
     allowedTabs = ['tab1', 'tab2', 'tab3', 'tab4'];
   } else if (role === 'recorder') {
