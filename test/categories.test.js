@@ -35,6 +35,64 @@ function slowClient() {
     if (!ok) failures++;
   };
 
+  const html = fs.readFileSync(__dirname + '/../index.html', 'utf8');
+  const text = (s) => (s || '').replace(/<[^>]*>/g, '').trim();
+  check('Create Example has no category picker', !/id=["']a-categories["']/.test(html),
+        '#a-categories is still present');
+  check('Create Example has no optional category label', !/Categories\s*\(optional\)/i.test(html),
+        'Categories (optional) is still present');
+  const button = html.match(/<button\b[^>]*id=["']tab8-btn["'][^>]*>([\s\S]*?)<\/button>/);
+  const heading = html.match(/id=["']tab8["'][^>]*>\s*<h2\b[^>]*>([\s\S]*?)<\/h2>/);
+  check('admin tab button says Create Categories', text(button?.[1]) === 'Create Categories', text(button?.[1]));
+  check('admin tab heading says Create Categories', text(heading?.[1]) === 'Create Categories', text(heading?.[1]));
+
+  // Exercise the real submit listener with successful persistence stubs.
+  for (const role of ['creator', 'admin']) {
+    const elements = {};
+    const calls = [], saved = [];
+    const wizard = {
+      console: { log() {}, error() {} }, DEMO_MODE: false, currentRole: role,
+      a: { state: { exampleId: 'draft', categoryIds: new Set([1]) } },
+      document: { getElementById: (id) => elements[id] ||= {
+        textContent: '', addEventListener(event, callback) { this[event] = callback; },
+      } },
+      supabaseClient: { rpc: async (name) => { calls.push(name); return { error: null }; } },
+      a_showStep() {},
+    };
+    vm.createContext(wizard);
+    vm.runInContext(code.slice(code.indexOf('function a_wireWizardOnce('),
+                              code.indexOf('async function a_saveImages(')), wizard);
+    for (const name of ['a_saveCheckmarks', 'a_saveImages', 'a_saveAudios']) {
+      wizard[name] = async () => { saved.push(name); return { inserted: 1 }; };
+    }
+    wizard.a_wireWizardOnce();
+    await elements['a-submit-btn'].click();
+    check(`${role} submission never calls the tagging RPC`, !calls.includes('set_example_categories'),
+          calls.join());
+    check(`${role} submission still saves checks, images and audio`, saved.length === 3 &&
+          elements['a-submit-status'].textContent.includes('Done'), 'submission did not finish');
+  }
+
+  const mutations = [];
+  const live = load(false, { from: (table) => ({
+    insert: async (value) => { mutations.push([table, 'insert', value]); return { error: null }; },
+    update(value) { mutations.push([table, 'update', value]); return this; },
+    delete() { mutations.push([table, 'delete']); return this; },
+    eq(column, value) { this.filter = [column, value]; return this; },
+    select() { return this; },
+    order: async () => ({ data: [], error: null }),
+    then(resolve) { resolve({ data: [{ id: 7 }], count: 0, error: null }); },
+  }) }).ctx;
+  await live.addCategory();
+  await live.renameCategory({ id: 7, category_type: 'Verbs' }, 'Nouns');
+  await live.deleteCategory({ id: 7, category_type: 'Nouns' });
+  check('category add still inserts the name', mutations[0]?.[0] === 'categories' &&
+        mutations[0]?.[1] === 'insert' && mutations[0]?.[2][0].category_type === 'Verbs', JSON.stringify(mutations));
+  check('category rename still updates the name', mutations[1]?.[1] === 'update' &&
+        mutations[1]?.[2].category_type === 'Nouns', JSON.stringify(mutations));
+  check('category delete still deletes the category', mutations[2]?.[0] === 'categories' &&
+        mutations[2]?.[1] === 'delete', JSON.stringify(mutations));
+
   let writes = 0;
   const writer = { insert: async () => { writes++; return { error: null }; },
                    update() { writes++; return this; }, delete() { writes++; return this; },
