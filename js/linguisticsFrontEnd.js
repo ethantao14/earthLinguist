@@ -3461,9 +3461,9 @@ async function fetchAndRenderTagExamples() {
     }
     if (!stillCurrent()) return;
     const [examples, categories, tags] = await Promise.all([
-      fetchAllTagExampleRows(supabaseClient.from('example').select('id, title, user, verification_status, irb_hold').order('title', { ascending: true })),
+      fetchAllTagExampleRows(supabaseClient.from('example').select('id, title, user, verification_status, irb_hold').order('title', { ascending: true }).order('id', { ascending: true })),
       supabaseClient.from('categories').select('id, category_type').order('category_type', { ascending: true }),
-      fetchAllTagExampleRows(supabaseClient.from('categories_example').select('example_id, category_id')),
+      fetchAllTagExampleRows(supabaseClient.from('categories_example').select('example_id, category_id').order('id', { ascending: true })),
     ]);
     if (!stillCurrent()) return;
     if (examples.error || categories.error || tags.error) {
