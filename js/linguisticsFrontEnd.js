@@ -3434,6 +3434,17 @@ async function renderApprovalCategories(exampleId) {
 }
 
 let tagExamplesFetchId = 0;
+const pendingTagExampleSaves = new Set();
+
+async function fetchAllTagExampleRows(query) {
+  const data = [];
+  for (let from = 0; ; from += 1000) {
+    const page = await query.range(from, from + 999);
+    if (page.error) throw page.error;
+    data.push(...page.data);
+    if (page.data.length < 1000) return { data, error: null };
+  }
+}
 
 async function fetchAndRenderTagExamples() {
   const tbody = document.querySelector('#tag-examples-table tbody');
@@ -3445,10 +3456,14 @@ async function fetchAndRenderTagExamples() {
   if (status) status.textContent = '';
 
   try {
+    while (pendingTagExampleSaves.size) {
+      await Promise.allSettled([...pendingTagExampleSaves]);
+    }
+    if (!stillCurrent()) return;
     const [examples, categories, tags] = await Promise.all([
-      supabaseClient.from('example').select('id, title, user, verification_status, irb_hold').order('title', { ascending: true }),
+      fetchAllTagExampleRows(supabaseClient.from('example').select('id, title, user, verification_status, irb_hold').order('title', { ascending: true })),
       supabaseClient.from('categories').select('id, category_type').order('category_type', { ascending: true }),
-      supabaseClient.from('categories_example').select('example_id, category_id'),
+      fetchAllTagExampleRows(supabaseClient.from('categories_example').select('example_id, category_id')),
     ]);
     if (!stillCurrent()) return;
     if (examples.error || categories.error || tags.error) {
@@ -3485,6 +3500,7 @@ async function fetchAndRenderTagExamples() {
       let saving = false;
       const draw = () => renderCategoryChips(chips, categories.data, selected, async (id) => {
         if (!stillCurrent() || saving) return;
+        if (status) status.textContent = '';
         if (DEMO_MODE) {
           if (status) status.textContent = 'Changes Not Allowed In Demo Version.';
           return;
@@ -3495,17 +3511,23 @@ async function fetchAndRenderTagExamples() {
         else selected.add(id);
         saving = true;
         draw();
+        let pendingSave;
         try {
-          const { error } = await supabaseClient.rpc('set_example_categories', {
+          pendingSave = Promise.resolve(supabaseClient.rpc('set_example_categories', {
             p_example_id: example.id, p_category_ids: [...selected],
-          });
+          }));
+          pendingTagExampleSaves.add(pendingSave);
+          const { error } = await pendingSave;
           if (error) throw error;
-          if (stillCurrent() && status) status.textContent = 'Categories updated.';
+          if (stillCurrent() && status && !status.textContent.includes('Failed')) {
+            status.textContent = 'Categories updated.';
+          }
         } catch (error) {
           selected = previous;
           console.error('Failed to update categories:', error);
-          if (stillCurrent() && status) status.textContent = 'Failed to update categories.';
+          if (stillCurrent() && status) status.textContent = `Failed to update categories for ${example.title}.`;
         } finally {
+          pendingTagExampleSaves.delete(pendingSave);
           saving = false;
           if (stillCurrent()) draw();
         }
