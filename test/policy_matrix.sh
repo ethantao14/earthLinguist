@@ -175,7 +175,7 @@ done
 for pair in "'$SESSION',null" "null,'Person'" "'$SESSION',''" "'$SESSION','   '" "'$SESSION',repeat('x',101)" "'50000000-0000-0000-0000-000000000099','Person'"; do
   check "recording consent rejects pair: $pair" no "$(q authenticated "$C" "select public._p(\$q\$insert into public.recording_consent(box,checked,recording_session_id,subject_name) values ('test consent',false,$pair)\$q\$);")"
 done
-check "session deletion cascades only linked consent" 1 "$(q authenticated "$C" "insert into public.recording_consent(box,checked,recording_session_id,subject_name) values ('test consent',true,'$SESSION','Person'),('test consent',false,null,null); reset role; delete from public.recording_session where id='$SESSION'; select count(*) from public.recording_consent where box='test consent';" | tail -1)"
+check "session deletion cascades only linked consent" 1 "$(q authenticated "$C" "insert into public.recording_consent(box,checked,recording_session_id,subject_name) values ('test consent',true,'$SESSION','Person'),('test consent',false,null,null); reset role; delete from public.audio where recording_session_id='$SESSION'; delete from public.recording_session where id='$SESSION'; select count(*) from public.recording_consent where box='test consent';" | tail -1)"
 
 echo
 if [ $fail -eq 0 ]; then echo "all checks passed"; else echo "$fail check(s) failed"; fi
