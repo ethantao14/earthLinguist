@@ -43,7 +43,12 @@ module.exports = async function tagExamplesTests(code, html, check) {
           reads.push(table);
           const result = response ? response(table) : { data: data[table] ?? ({ example: examples, categories, categories_example: [{ example_id: 'a', category_id: 1 }] })[table], error: null };
           let bounds;
+          const orders = [];
           const query = {
+            order(column) {
+              orders.push(column);
+              return query;
+            },
             then(yes, no) {
               return Promise.resolve(result).then(value => {
                 if (!bounds || !value.data) return value;
@@ -52,11 +57,11 @@ module.exports = async function tagExamplesTests(code, html, check) {
             },
             range(from, to) {
               bounds = [from, to];
-              ranges.push({ table, from, to });
+              ranges.push({ table, from, to, orders });
               return query;
             },
           };
-          for (const method of ['select', 'order', 'eq', 'in', 'is', 'neq', 'limit']) query[method] = () => query;
+          for (const method of ['select', 'eq', 'in', 'is', 'neq', 'limit']) query[method] = () => query;
           return query;
         },
         async rpc(name, args) { calls.push({ name, args: JSON.parse(JSON.stringify(args)) }); return rpc ? rpc(name, args) : { error: null }; },
@@ -192,6 +197,23 @@ module.exports = async function tagExamplesTests(code, html, check) {
     check('loader pages examples and links by 1000 and shows all 2500 tags',
       allPages && rows(h).length === 2500 && rows(h).every(row => selected(row) === 'Nouns'),
       `${rows(h).length} rows rendered; ranges: ${JSON.stringify(h.ranges)}`);
+  });
+  await scenario('every paged tag query ends its order with id', async () => {
+    const manyExamples = Array.from({ length: 1001 }, (_, i) => ({
+      ...examples[0], id: `example-${i}`, title: 'Same title',
+    }));
+    const h = harness({ data: {
+      example: manyExamples,
+      categories_example: manyExamples.map((example, id) => ({
+        id, example_id: example.id, category_id: 1,
+      })),
+    } });
+    await h.load();
+    const pagedBothTables = ['example', 'categories_example'].every(table =>
+      h.ranges.filter(query => query.table === table).length >= 2);
+    check('every paged tag query ends its order with id',
+      pagedBothTables && h.ranges.every(query => query.orders.at(-1) === 'id'),
+      `paged queries: ${JSON.stringify(h.ranges)}`);
   });
   await scenario('another row success preserves a visible save failure', async () => {
     const pending = [deferred(), deferred()];
