@@ -164,6 +164,22 @@ function makeClient(reply) {
   };
 }
 
+// Finds the consent page's matching </div>, then expects the message paragraph next.
+function messageFollowsPage(markup) {
+  const open = markup.search(/<div\b[^>]*\bid=["']creator-consent-page["']/);
+  if (open < 0) return false;
+  const tags = /<\/?div\b[^>]*>/gi;
+  tags.lastIndex = open;
+  let depth = 0, tag;
+  while ((tag = tags.exec(markup))) {
+    depth += tag[0][1] === '/' ? -1 : 1;
+    if (depth === 0) break;
+  }
+  if (!tag) return false;
+  const rest = markup.slice(tags.lastIndex).replace(/^(\s|<!--[\s\S]*?-->)*/, '');
+  return /^<p\b[^>]*\bid=["']creator-consent-message["']/.test(rest);
+}
+
 const tick = async () => { for (let i = 0; i < 30; i++) await Promise.resolve(); };
 const deferred = () => { let resolve; const promise = new Promise(r => { resolve = r; }); return { promise, resolve }; };
 
@@ -179,7 +195,8 @@ function harness({ demo = false, role = 'creator', user = USER_1, reply } = {}) 
   for (const id of ids) el[id] = dom.document.getElementById(id);
   el['a-wizard'].style.display = 'none';
   el['creator-consent-page'].style.display = 'none';
-  for (const id of ['creator-consent-text', 'creator-consent-boxes', 'creator-consent-submit', 'creator-consent-decline', 'creator-consent-message']) {
+  // The message sits beside the page, not inside it, so it shows while the page is hidden.
+  for (const id of ['creator-consent-text', 'creator-consent-boxes', 'creator-consent-submit', 'creator-consent-decline']) {
     el['creator-consent-page'].appendChild(el[id]);
   }
   el['creator-consent-submit'].tagName = 'BUTTON';
@@ -238,6 +255,7 @@ const route = (read, write) => chain => chain.steps.some(s => s.method === 'inse
   check('submit button reads I consent', /<button\b[^>]*id=["']creator-consent-submit["'][^>]*>\s*I consent\s*<\/button>/.test(tab4));
   check('decline button reads I do not consent', /<button\b[^>]*id=["']creator-consent-decline["'][^>]*>\s*I do not consent\s*<\/button>/.test(tab4));
   check('message paragraph exists', /<p\b[^>]*id=["']creator-consent-message["'][^>]*>\s*<\/p>/.test(tab4));
+  check('message paragraph sits directly after the consent page, outside it', messageFollowsPage(tab4), 'message is inside the page or not next to it');
 
   // ---------- tab4 click handlers ----------
   for (const site of ['checkLoginStatus', 'bootDemo']) {
@@ -327,8 +345,8 @@ const route = (read, write) => chain => chain.steps.some(s => s.method === 'inse
   await scenario('check error fails closed', async () => {
     const h = harness({ reply: route(() => ({ data: null, error: { message: 'boom', code: '500' } }), noRow) });
     await h.open(); await tick();
-    check('check error keeps wizard and form hidden, shows a message',
-      !h.wizardShown() && !h.formShown() && h.message().length > 0, h.message());
+    check('check error keeps wizard and form hidden, shows a visible message',
+      !h.wizardShown() && !h.formShown() && h.message().length > 0 && h.visible(h.el['creator-consent-message']), h.message());
   });
 
   await scenario('submit with an unticked box', async () => {
