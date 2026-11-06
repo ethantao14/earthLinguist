@@ -3734,6 +3734,7 @@ async function submitCreatorConsent() {
 
   // 23505 means a consent row already exists, which counts as consented.
   if (!error || error.code === '23505') {
+    creatorConsentCheckNumber++; // older in-flight checks must not re-show the form
     creatorConsentConfirmedFor = userId;
     setCreatorConsentView(true, false);
     return;

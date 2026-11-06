@@ -13,8 +13,9 @@ create table public.creator_consent (
   answers jsonb not null
     check ( jsonb_typeof(answers) = 'object'
             and answers <> '{}'::jsonb
-            -- every value must be JSON true
-            and not jsonb_path_exists(answers, '$.* ? (@.type() != "boolean" || @ != true)') ),
+            -- every value must be JSON true; strict so arrays are not unwrapped
+            and not jsonb_path_exists(answers, 'strict $.* ? (@.type() != "boolean" || @ != true)',
+                                      '{}', true) ),
   created_at timestamptz not null default now(),
   unique (user_id, form_version)
 );
@@ -32,7 +33,8 @@ revoke all on public.creator_consent from anon, authenticated;
 grant select on public.creator_consent to authenticated;
 grant insert (user_id, form_version, answers) on public.creator_consent to authenticated;
 
--- True if p_user agreed to any version of the form.
+-- True if p_user agreed to any version of the form. Only the person
+-- themselves or an admin may ask; anyone else always gets false.
 create or replace function public.has_creator_consent(p_user uuid)
 returns boolean
 language sql
@@ -40,7 +42,8 @@ stable
 security definer
 set search_path = public
 as $$
-  select exists (select 1 from public.creator_consent where user_id = p_user);
+  select coalesce(p_user = auth.uid() or public.is_admin(auth.uid()), false)
+     and exists (select 1 from public.creator_consent where user_id = p_user);
 $$;
 
 revoke all on function public.has_creator_consent(uuid) from public, anon;
