@@ -243,7 +243,17 @@
 			<div id="tab4" class="tab-content">
 				<h2>Create Example</h2>
 
-				<div class="wizard">
+				<!-- Shown once to creators before they can create examples -->
+				<div id="creator-consent-page" style="display:none">
+					<h3>Creator Consent Form</h3>
+					<div id="creator-consent-text">[PLACEHOLDER: paste Tom's Creator Consent Form text here. Do not edit this wording without IRB approval.]</div>
+					<div id="creator-consent-boxes"></div>
+					<button id="creator-consent-submit">I consent</button>
+					<button id="creator-consent-decline">I do not consent</button>
+				</div>
+				<p id="creator-consent-message"></p>
+
+				<div id="a-wizard" class="wizard" style="display:none">
 					<!-- progress bar -->
 					<div class="progress-container">
 						<div id="progress-bar-admin" class="progress-bar"></div>
