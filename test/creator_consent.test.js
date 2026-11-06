@@ -438,6 +438,21 @@ const route = (read, write) => chain => chain.steps.some(s => s.method === 'inse
     check('older error does not hide the newer wizard', answers2.length === 2 && h2.wizardShown() && h2.message() === '', h2.message());
   });
 
+  await scenario('successful submit outranks an older in-flight check', async () => {
+    const save = deferred(), lateCheck = deferred();
+    let readCount = 0;
+    const read = () => { readCount++; return readCount === 1 ? noRow() : lateCheck.promise; };
+    const h = harness({ reply: route(read, () => save.promise) });
+    await h.open(); await tick();
+    h.boxes().forEach(b => { b.checked = true; });
+    const submitting = h.el['creator-consent-submit'].click(); await tick();
+    const reopening = h.open(); await tick();
+    save.resolve({ data: null, error: null }); await submitting; await tick();
+    lateCheck.resolve(noRow()); await reopening; await tick();
+    check('older check answering no row does not re-show the form after consent',
+      readCount === 2 && h.wizardShown() && !h.formShown(), `reads ${readCount}`);
+  });
+
   await scenario('cached consent is per user', async () => {
     const h = harness({ reply: route(hasRow, noRow) });
     await h.open(); await tick();

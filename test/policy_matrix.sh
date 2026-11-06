@@ -145,7 +145,7 @@ check "same person, same version twice is refused" no "$(q authenticated $D "$(o
 check "same person, another version is allowed" YES "$(q authenticated $D "$(own); $(try "insert into $CC(form_version,answers) values ('v2','$OK_ANSWERS')")" | tail -1)"
 check "two people, same version is allowed" YES "$(q authenticated $D "$(seed $A) set local role authenticated; $(try "$(own)")" | tail -1)"
 
-for answers in '{"box1":true,"box2":false}' '{"box1":false}' '{}' '[true]' '[]' 'true' '{"box1":"true"}' '{"box1":1}' '{"box1":null}'; do
+for answers in '{"box1":true,"box2":false}' '{"box1":false}' '{}' '[true]' '[]' 'true' '{"box1":"true"}' '{"box1":1}' '{"box1":null}' '{"box1":[true]}' '{"box1":[]}'; do
   check "answers refused: $answers" no "$(q authenticated $D "$(try "insert into $CC(form_version,answers) values ('$V','$answers')")")"
 done
 check "answers refused: null" no "$(q authenticated $D "$(try "insert into $CC(form_version,answers) values ('$V',null)")")"
@@ -189,6 +189,12 @@ check "PUBLIC has no execute on has_creator_consent" t "$(q postgres "" "select 
 check "has_creator_consent false without a row" f "$(q authenticated $D "select public.has_creator_consent('$D');")"
 check "has_creator_consent true with a row" t "$(q authenticated $D "$(seed $D) set local role authenticated; select public.has_creator_consent('$D');" | tail -1)"
 check "has_creator_consent true for any version" t "$(q authenticated $D "reset role; insert into $CC(user_id,form_version,answers) values ('$D','other-v9','$OK_ANSWERS'); set local role authenticated; select public.has_creator_consent('$D');" | tail -1)"
+# Nobody may probe another person's consent, except an admin.
+for uid in "$A" "$B" "$C"; do
+  check "$uid probing D's consent gets false" f "$(q authenticated "$uid" "$(seed $D) set local role authenticated; select public.has_creator_consent('$D');" | tail -1)"
+done
+check "D asking about own consent gets true" t "$(q authenticated $D "$(seed $D) set local role authenticated; select public.has_creator_consent('$D');" | tail -1)"
+check "admin asking about D's consent gets true" t "$(q authenticated $E "$(seed $D) set local role authenticated; select public.has_creator_consent('$D');" | tail -1)"
 
 echo "creator consent: creating examples needs consent"
 NEW_EXAMPLE=$'insert into public.example(width,height,title,"user",verification_status) values (1,1,\'x\',\'x\',false)'
