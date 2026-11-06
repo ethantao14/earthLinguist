@@ -27,7 +27,8 @@ check () { # description expected actual
   else printf "  FAIL  %-52s expected %s, got %s\n" "$1" "$2" "$3"; fail=$((fail+1)); fi
 }
 
-for migration in 0012_recording_consent.sql 0012_rollback.sql 0013_require_recording_consent.sql 0013_rollback.sql; do
+for migration in 0010_creator_consent.sql 0010_rollback.sql 0011_require_creator_consent.sql 0011_rollback.sql \
+    0012_recording_consent.sql 0012_rollback.sql 0013_require_recording_consent.sql 0013_rollback.sql; do
   if [ -s "$(dirname "$0")/../db/$migration" ]; then present=yes; else present=no; fi
   check "migration delivered: $migration" yes "$present"
 done
@@ -241,8 +242,12 @@ FK_STATE="reset role; create function pg_temp.fk_state() returns text language p
 check "a link to a missing session fails once checked" 23503 "$(q authenticated $C "$FK_STATE select pg_temp.fk_state();" | tail -1)"
 check "a link to a session made later in the same transaction is fine" ok "$(q authenticated $C "$(rfor $NEW_SESSION); reset role; insert into public.recording_session(id,example_id,\"user\",language) values ('$NEW_SESSION','$OWN_EXAMPLE','Rita','L'); set constraints all immediate; select 'ok';" 2>/dev/null | tail -1)"
 check "deleting the session keeps the name and drops the link" Ana, "$(q postgres "" "insert into public.recording_session(id,example_id,\"user\",language) values ('$NEW_SESSION','$OWN_EXAMPLE','Rita','L'); $(rseed_for $C $NEW_SESSION) set constraints all immediate; delete from public.recording_session where id='$NEW_SESSION'; select subject_name || ',' || coalesce(recording_session_id::text,'') from $RC;" | tail -1)"
-check "a session link needs a subject name" no "$(q authenticated $C "$(try "insert into $RC(recording_session_id,form_version,answers) values ('$OLD_SESSION','$V','$OK_ANSWERS')")")"
-check "a someone-else row with a session link is allowed" YES "$(q authenticated $C "$(try "$(rfor $OLD_SESSION)")")"
+check "a session link needs a subject name" no "$(q authenticated $C "$(try "insert into $RC(recording_session_id,form_version,answers) values ('$NEW_SESSION','$V','$OK_ANSWERS')")")"
+check "a someone-else row linked to a new session is allowed" YES "$(q authenticated $C "$(try "$(rfor $NEW_SESSION)")")"
+# A consent row may only be linked to a session that does not exist yet.
+for uid in "$C" "$D" "$E"; do
+  check "$uid cannot link consent to an existing session" no "$(q authenticated "$uid" "$(try "$(rfor $OLD_SESSION)")")"
+done
 check "a someone-else row without a session link is allowed" YES "$(q authenticated $C "$(try "insert into $RC(subject_name,form_version,answers) values ('Ana','$V','$OK_ANSWERS')")")"
 
 for answers in '{"box1":true,"box2":false}' '{"box1":false}' '{}' '[true]' '[]' 'true' '{"box1":"true"}' '{"box1":1}' '{"box1":null}' '{"box1":[true]}' '{"box1":[]}'; do
@@ -266,13 +271,16 @@ done
 check "same person, same version, self twice is refused" no "$(q authenticated $C "$(rown); $(try "$(rown)")" | tail -1)"
 check "same person, another version, self is allowed" YES "$(q authenticated $C "$(rown); $(try "insert into $RC(form_version,answers) values ('v2','$OK_ANSWERS')")" | tail -1)"
 check "two people, same version, self is allowed" YES "$(q authenticated $C "$(rseed $A) set local role authenticated; $(try "$(rown)")" | tail -1)"
-check "someone-else rows may repeat" YES "$(q authenticated $C "$(rfor $OLD_SESSION); $(try "$(rfor $OLD_SESSION)")" | tail -1)"
-check "a self row and a someone-else row may share a version" YES "$(q authenticated $C "$(rown); $(try "$(rfor $OLD_SESSION)")" | tail -1)"
+check "someone-else rows may repeat" YES "$(q authenticated $C "$(rfor $NEW_SESSION); $(try "$(rfor $NEW_SESSION)")" | tail -1)"
+check "a self row and a someone-else row may share a version" YES "$(q authenticated $C "$(rown); $(try "$(rfor $NEW_SESSION)")" | tail -1)"
 
 for uid in "$A" "$B" "$C" "$D" "$E"; do
   other=$A; [ "$uid" = "$A" ] && other=$B
-  check "$uid inserts own recording consent" YES "$(q authenticated "$uid" "$(try "$(rown)")")"
-  check "$uid inserts own recording consent with own user_id" YES "$(q authenticated "$uid" "$(try "insert into $RC(user_id,form_version,answers) values ('$uid','$V','$OK_ANSWERS')")")"
+  # Only recorders, creators and admins may give recording consent.
+  may=YES; { [ "$uid" = "$A" ] || [ "$uid" = "$B" ]; } && may=no
+  check "$uid inserts own recording consent" $may "$(q authenticated "$uid" "$(try "$(rown)")")"
+  check "$uid inserts own someone-else consent" $may "$(q authenticated "$uid" "$(try "$(rfor $NEW_SESSION)")")"
+  check "$uid inserts own recording consent with own user_id" $may "$(q authenticated "$uid" "$(try "insert into $RC(user_id,form_version,answers) values ('$uid','$V','$OK_ANSWERS')")")"
   check "$uid cannot record consent as another person" no "$(q authenticated "$uid" "$(try "insert into $RC(user_id,form_version,answers) values ('$other','$V','$OK_ANSWERS')")")"
   check "$uid cannot set recording consent id" no "$(q authenticated "$uid" "$(try "insert into $RC(id,form_version,answers) values (gen_random_uuid(),'$V','$OK_ANSWERS')")")"
   check "$uid cannot set recording consent created_at" no "$(q authenticated "$uid" "$(try "insert into $RC(created_at,form_version,answers) values ('2000-01-01','$V','$OK_ANSWERS')")")"
@@ -292,7 +300,7 @@ for operation in "update $RC set form_version='changed'" "delete from $RC"; do
 done
 
 echo "recording consent: helper functions"
-for fn in has_recording_consent has_session_consent owns_example; do
+for fn in has_recording_consent has_session_consent owns_example recording_session_exists; do
   FN="'public.$fn(uuid)'::regprocedure"
   check "$fn is stable security definer" true,s "$(q postgres "" "select prosecdef::text || ',' || provolatile::text from pg_proc where oid=$FN;")"
   check "$fn pins search_path to public" t "$(q postgres "" "select 'search_path=public' = any(proconfig) from pg_proc where oid=$FN;")"
@@ -313,6 +321,9 @@ check "has_session_consent true for own linked row" t "$(q authenticated $C "$(r
 check "has_session_consent false without a linked row" f "$(q authenticated $C "$(rseed $C) set local role authenticated; select public.has_session_consent('$OLD_SESSION');" | tail -1)"
 check "has_session_consent false for another person's linked row" f "$(q authenticated $D "$(rseed_for $C $OLD_SESSION) set local role authenticated; select public.has_session_consent('$OLD_SESSION');" | tail -1)"
 check "has_session_consent false for another session" f "$(q authenticated $C "$(rseed_for $C $OLD_SESSION) set local role authenticated; select public.has_session_consent('$OTHER_SESSION');" | tail -1)"
+check "recording_session_exists true for an existing session" t "$(q authenticated $C "select public.recording_session_exists('$OLD_SESSION');")"
+check "recording_session_exists true for a session hidden from the caller" t "$(q authenticated $A "select public.recording_session_exists('$OLD_SESSION');")"
+check "recording_session_exists false for a missing session" f "$(q authenticated $C "select public.recording_session_exists('$NEW_SESSION');")"
 check "owns_example true for own approved example" t "$(q authenticated $D "select public.owns_example('$OWN_EXAMPLE');")"
 check "owns_example true for own hidden draft" t "$(q authenticated $D "select public.owns_example('$OWN_DRAFT');")"
 check "owns_example false for another's example" f "$(q authenticated $D "$SEED_FOREIGN select public.owns_example('$FOREIGN_EXAMPLE');" | tail -1)"

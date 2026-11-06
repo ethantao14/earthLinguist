@@ -13,6 +13,7 @@ const PLACEHOLDER = "[PLACEHOLDER: paste Tom's Recording Consent Form text here.
 const USER_1 = 'u0000000-0000-0000-0000-000000000001';
 const USER_2 = 'u0000000-0000-0000-0000-000000000002';
 const ALL_TRUE = { box1: true, box2: true };
+const NO_MODE = 'Please choose who you are recording first.';
 const MISSING_CONSENT = 'Consent for the person being recorded is missing. Please choose who you are recording again.';
 
 let failures = 0;
@@ -670,8 +671,6 @@ async function consentForOther(h, name = '  Ana Lopez  ') {
     check('self mode insert has no select chained', !!writes[0] && !writes[0].steps.some(s => s.method === 'select'));
     check('self mode returns an object with error null', !!selfResult && selfResult.error === null, JSON.stringify(selfResult));
 
-    const none = harness();
-    await none.ctx.insertRecordingSession({ ...SESSION });
     const missing = harness();
     vm.runInContext("recordingMode = 'other'; pendingOtherConsent = null;", missing.ctx);
     const refused = await missing.ctx.insertRecordingSession({ ...SESSION });
@@ -679,8 +678,18 @@ async function consentForOther(h, name = '  Ana Lopez  ') {
       !!refused && !!refused.error && refused.error.message === MISSING_CONSENT && missing.client.chains.length === 0,
       JSON.stringify(refused) + ` calls ${missing.client.chains.length}`);
 
-    check('no mode chosen: plain insert, no rpc',
-      none.inserts().length === 1 && none.inserts()[0].table === 'recording_session' && none.rpcs().length === 0);
+    const none = harness();
+    const noneResult = await none.ctx.insertRecordingSession({ ...SESSION });
+    check('no mode chosen: a non-admin gets the exact error and no db call',
+      !!noneResult && !!noneResult.error && noneResult.error.message === NO_MODE && none.client.chains.length === 0,
+      JSON.stringify(noneResult) + ` calls ${none.client.chains.length}`);
+    const adminNone = harness({ role: 'admin' });
+    await adminNone.ctx.insertRecordingSession({ ...SESSION });
+    const adminWrite = adminNone.inserts()[0];
+    const adminInsert = adminWrite && adminWrite.steps.find(s => s.method === 'insert');
+    check('no mode chosen: an admin does the plain insert, no rpc',
+      adminNone.inserts().length === 1 && adminWrite.table === 'recording_session' && adminNone.rpcs().length === 0
+      && Array.isArray(adminInsert.args[0]) && sameJson(adminInsert.args[0][0], SESSION));
   });
 
   await scenario('finishRecordingSubmission', async () => {
@@ -689,6 +698,8 @@ async function consentForOther(h, name = '  Ana Lopez  ') {
     await h.ctx.insertRecordingSession({ ...SESSION });
     h.ctx.finishRecordingSubmission();
     check('other mode: pending consent and mode cleared', h.value('pendingOtherConsent') === null && h.value('recordingMode') === null);
+    check('other mode: finishing at once hides the wizard and change button and shows the mode choice',
+      h.onlyMode() && h.message() === '', `wizard ${h.wizardShown()}, change ${h.changeShown()}, mode page ${h.modeShown()}`);
     await h.open(); await tick();
     check('next open asks for the mode again', h.onlyMode());
     await h.pickOther(); await tick();
