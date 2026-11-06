@@ -388,6 +388,7 @@ async function checkLoginStatus() {
   });
   document.getElementById("tab3-btn").addEventListener("click", function() {
     openTab("tab3", this);
+    openRecordTab();
   });
   document.getElementById("subtabB-btn").addEventListener("click", function() {
     openNestedTab("subtabB", this, "tab2");
@@ -460,7 +461,7 @@ function bootDemo() {
   //when a tab button is clicked, the openTab function is called to switch tabs accordingly
   document.getElementById("tab1-btn").addEventListener("click", function() { openTab("tab1", this); });
   document.getElementById("tab2-btn").addEventListener("click", function() { openTab("tab2", this); });
-  document.getElementById("tab3-btn").addEventListener("click", function() { openTab("tab3", this); });
+  document.getElementById("tab3-btn").addEventListener("click", function() { openTab("tab3", this); openRecordTab(); });
   document.getElementById("subtabB-btn").addEventListener("click", function() { openNestedTab("subtabB", this, "tab2"); });
   document.getElementById("subtabC-btn").addEventListener("click", function() { openNestedTab("subtabC", this, "tab2"); });
   document.getElementById("tab4-btn").addEventListener("click", function() { openTab("tab4", this); openCreateExampleTab(); a_wireWizardOnce();});
@@ -1650,15 +1651,13 @@ document.getElementById('submit-recordings-btn').addEventListener('click', async
   const sessionVerified = currentRole === 'admin';
 
   const newSessionId = newId();
-  const { error: sessionErr } = await supabaseClient
-    .from('recording_session')
-    .insert([{
-      id: newSessionId,
-      example_id: ex.id,
-      language,
-      user: userString,
-      verification_status: sessionVerified
-    }]);
+  const { error: sessionErr } = await insertRecordingSession({
+    id: newSessionId,
+    example_id: ex.id,
+    language,
+    user: userString,
+    verification_status: sessionVerified
+  });
 
   if (sessionErr) {
     status.textContent = sessionErr.message || 'Error creating session';
@@ -1730,6 +1729,7 @@ document.getElementById('submit-recordings-btn').addEventListener('click', async
     pendingRecordings = {};
 
     status.textContent = '✅ All recordings saved!';
+    finishRecordingSubmission();
     
     await refreshStep3FromSession();
 
@@ -3752,3 +3752,257 @@ function declineCreatorConsent() {
   setCreatorConsentView(false, true);
 }
 // ===== End creator consent
+
+// ===== Recording consent (asked before the Record wizard) =====
+const RECORDING_CONSENT_FORM_VERSION = 'placeholder-v1';
+const RECORDING_CONSENT_BOXES = [
+  { key: 'box1', label: '[PLACEHOLDER: recording consent box 1 text]' },
+  { key: 'box2', label: '[PLACEHOLDER: recording consent box 2 text]' },
+];
+const RECORDING_CONSENT_DECLINED_MESSAGE = 'Sorry, we cannot let you record without consent.';
+const RECORDING_CONSENT_MISSING_MESSAGE =
+  'Consent for the person being recorded is missing. Please choose who you are recording again.';
+const RECORDING_MODE_MISSING_MESSAGE = 'Please choose who you are recording first.';
+
+let recordingMode = null;          // null, 'self' or 'other'
+let recordingModeFor = null;       // user id that chose the current mode
+let pendingOtherConsent = null;    // { subjectName, answers } until the session is saved
+let recordingConsentFlow = null;   // which flow the shown form belongs to: 'self' or 'other'
+let recordingConsentConfirmedFor = null; // user id whose self consent was confirmed this page load
+let recordingConsentCheckNumber = 0;     // only the latest check may change the screen
+let recordingConsentButtonsWired = false;
+let recordingConsentSaving = false;
+
+// view is 'wizard', 'mode', 'form' or 'none'.
+function setRecordingView(view) {
+  document.getElementById('record-wizard').style.display = view === 'wizard' ? '' : 'none';
+  document.getElementById('recording-mode-page').style.display = view === 'mode' ? '' : 'none';
+  document.getElementById('recording-consent-page').style.display = view === 'form' ? '' : 'none';
+  const showChange = view === 'wizard' && !DEMO_MODE;
+  document.getElementById('recording-mode-change').style.display = showChange ? '' : 'none';
+  if (view === 'wizard' || view === 'mode') setRecordingConsentMessage('');
+}
+
+function setRecordingConsentMessage(text) {
+  document.getElementById('recording-consent-message').textContent = text;
+}
+
+function wireRecordingConsentButtonsOnce() {
+  if (recordingConsentButtonsWired) return;
+  recordingConsentButtonsWired = true;
+  document.getElementById('recording-mode-self').addEventListener('click', () => chooseRecordingMode('self'));
+  document.getElementById('recording-mode-other').addEventListener('click', () => chooseRecordingMode('other'));
+  document.getElementById('recording-consent-submit').addEventListener('click', submitRecordingConsent);
+  document.getElementById('recording-consent-decline').addEventListener('click', declineRecordingConsent);
+  document.getElementById('recording-mode-change').addEventListener('click', changeRecordingMode);
+}
+
+function setRecordingMode(mode) {
+  recordingMode = mode;
+  recordingModeFor = mode === null ? null : currentUserId;
+}
+
+// Forgets the chosen mode and any unsaved someone-else consent, and
+// stops older self checks from changing the screen.
+function resetRecordingChoice() {
+  recordingConsentCheckNumber++;
+  setRecordingMode(null);
+  pendingOtherConsent = null;
+  recordingConsentFlow = null;
+}
+
+// Fresh, unticked checkboxes with both buttons ready. The name field shows only for 'other'.
+function renderRecordingConsentForm(flow) {
+  recordingConsentFlow = flow;
+  const boxesEl = document.getElementById('recording-consent-boxes');
+  boxesEl.replaceChildren();
+  for (const box of RECORDING_CONSENT_BOXES) {
+    const input = document.createElement('input');
+    input.type = 'checkbox';
+    input.checked = false;
+    input.setAttribute('data-key', box.key);
+    const label = document.createElement('label');
+    label.append(input, ' ' + box.label);
+    const row = document.createElement('div');
+    row.appendChild(label);
+    boxesEl.appendChild(row);
+  }
+  boxesEl.style.display = '';
+
+  document.getElementById('recording-subject-name').value = '';
+  document.getElementById('recording-subject-wrap').style.display = flow === 'other' ? '' : 'none';
+
+  const submitBtn = document.getElementById('recording-consent-submit');
+  const declineBtn = document.getElementById('recording-consent-decline');
+  submitBtn.style.display = '';
+  declineBtn.style.display = '';
+  submitBtn.disabled = false;
+  declineBtn.disabled = false;
+  setRecordingConsentMessage('');
+  setRecordingView('form');
+}
+
+function openRecordTab() {
+  wireRecordingConsentButtonsOnce();
+  if (DEMO_MODE) {
+    setRecordingView('wizard');
+    return;
+  }
+  const sameUser = recordingModeFor !== null && recordingModeFor === currentUserId;
+  const selfReady = recordingMode === 'self' && sameUser
+    && (currentRole === 'admin' || recordingConsentConfirmedFor === currentUserId);
+  const otherReady = recordingMode === 'other' && sameUser && pendingOtherConsent !== null;
+  if (selfReady || otherReady) {
+    setRecordingView('wizard');
+    return;
+  }
+  resetRecordingChoice();
+  setRecordingView('mode');
+}
+
+async function chooseRecordingMode(mode) {
+  if (DEMO_MODE) {
+    setRecordingView('wizard');
+    return;
+  }
+  resetRecordingChoice();
+  const checkNumber = recordingConsentCheckNumber;
+
+  if (mode === 'other') {
+    renderRecordingConsentForm('other');
+    return;
+  }
+
+  const userId = currentUserId;
+  if (currentRole === 'admin' || (recordingConsentConfirmedFor !== null && recordingConsentConfirmedFor === userId)) {
+    setRecordingMode('self');
+    setRecordingView('wizard');
+    return;
+  }
+
+  setRecordingView('none');
+  setRecordingConsentMessage('');
+  const { data, error } = await supabaseClient
+    .from('recording_consent')
+    .select('id')
+    .eq('user_id', userId)
+    .eq('form_version', RECORDING_CONSENT_FORM_VERSION)
+    .is('subject_name', null)
+    .limit(1);
+
+  if (checkNumber !== recordingConsentCheckNumber) return;
+
+  if (error) {
+    console.error('recording consent check failed:', error);
+    setRecordingView('none');
+    setRecordingConsentMessage('Could not check consent. Please try again.');
+    return;
+  }
+  if (data && data.length > 0) {
+    recordingConsentConfirmedFor = userId;
+    setRecordingMode('self');
+    setRecordingView('wizard');
+    return;
+  }
+  renderRecordingConsentForm('self');
+}
+
+async function submitRecordingConsent() {
+  if (DEMO_MODE || recordingConsentSaving) return;
+
+  const inputs = document.getElementById('recording-consent-boxes').querySelectorAll('input[type="checkbox"]');
+  const answers = {};
+  for (const box of RECORDING_CONSENT_BOXES) {
+    const input = Array.from(inputs).find(i => i.getAttribute('data-key') === box.key);
+    if (!input || !input.checked) {
+      setRecordingConsentMessage('Please tick every box to give consent.');
+      return;
+    }
+    answers[box.key] = true;
+  }
+
+  // Someone else: nothing is saved now; the consent is saved with the session.
+  if (recordingConsentFlow === 'other') {
+    const subjectName = document.getElementById('recording-subject-name').value.trim();
+    if (subjectName === '') {
+      setRecordingConsentMessage('Please enter the name of the person being recorded.');
+      return;
+    }
+    recordingConsentCheckNumber++;
+    pendingOtherConsent = { subjectName, answers };
+    setRecordingMode('other');
+    setRecordingView('wizard');
+    return;
+  }
+  if (recordingConsentFlow !== 'self') return;
+
+  const submitBtn = document.getElementById('recording-consent-submit');
+  recordingConsentSaving = true;
+  submitBtn.disabled = true;
+  setRecordingConsentMessage('Saving...');
+
+  const userId = currentUserId;
+  const row = { user_id: userId, form_version: RECORDING_CONSENT_FORM_VERSION, answers };
+  const { error } = await supabaseClient.from('recording_consent').insert(row);
+  recordingConsentSaving = false;
+
+  // 23505 means a self consent row already exists, which counts as consented.
+  if (!error || error.code === '23505') {
+    recordingConsentCheckNumber++; // older in-flight checks must not re-show the form
+    recordingConsentConfirmedFor = userId;
+    setRecordingMode('self');
+    setRecordingView('wizard');
+    return;
+  }
+  console.error('recording consent save failed:', error);
+  setRecordingConsentMessage('Could not save your consent. Please try again.');
+  submitBtn.disabled = false;
+}
+
+function declineRecordingConsent() {
+  resetRecordingChoice();
+  document.getElementById('recording-consent-boxes').style.display = 'none';
+  document.getElementById('recording-subject-wrap').style.display = 'none';
+  document.getElementById('recording-consent-submit').style.display = 'none';
+  document.getElementById('recording-consent-decline').style.display = 'none';
+  setRecordingView('form');
+  setRecordingConsentMessage(RECORDING_CONSENT_DECLINED_MESSAGE);
+}
+
+// Back to the mode choice. A cached self consent stays cached.
+function changeRecordingMode() {
+  resetRecordingChoice();
+  setRecordingView('mode');
+}
+
+// Someone else: the consent row and the session are saved together in one call.
+async function insertRecordingSession(row) {
+  if (recordingMode === 'other') {
+    if (pendingOtherConsent === null) {
+      return { error: { message: RECORDING_CONSENT_MISSING_MESSAGE } };
+    }
+    const { error } = await supabaseClient.rpc('submit_recording_session_for_other', {
+      p_session_id: row.id,
+      p_example_id: row.example_id,
+      p_language: row.language,
+      p_user: row.user,
+      p_subject_name: pendingOtherConsent.subjectName,
+      p_form_version: RECORDING_CONSENT_FORM_VERSION,
+      p_answers: pendingOtherConsent.answers,
+    });
+    return { error: error || null };
+  }
+  if (recordingMode === null && currentRole !== 'admin') {
+    return { error: { message: RECORDING_MODE_MISSING_MESSAGE } };
+  }
+  const { error } = await supabaseClient.from('recording_session').insert([row]);
+  return { error: error || null };
+}
+
+// A someone-else consent covers one session, so the next recording asks again.
+function finishRecordingSubmission() {
+  if (recordingMode !== 'other') return;
+  resetRecordingChoice();
+  setRecordingView('mode');
+}
+// ===== End recording consent

@@ -162,8 +162,27 @@
 				<!-- Title -->
 				<h2>Record Clips</h2>
 
+				<!-- Asked before recording: who is being recorded -->
+				<div id="recording-mode-page" style="display:none">
+					<p>Who are you recording?</p>
+					<button id="recording-mode-self">Recording myself</button>
+					<button id="recording-mode-other">Recording for someone else</button>
+				</div>
+
+				<!-- Consent from the person being recorded -->
+				<div id="recording-consent-page" style="display:none">
+					<h3>Recording Consent Form</h3>
+					<div id="recording-consent-text">[PLACEHOLDER: paste Tom's Recording Consent Form text here. Do not edit this wording without IRB approval.]</div>
+					<div id="recording-subject-wrap" style="display:none"><label for="recording-subject-name">Name of the person being recorded</label><input id="recording-subject-name" type="text" maxlength="100"></div>
+					<div id="recording-consent-boxes"></div>
+					<button id="recording-consent-submit">I consent</button>
+					<button id="recording-consent-decline">I do not consent</button>
+				</div>
+				<p id="recording-consent-message"></p>
+
+				<button id="recording-mode-change" style="display:none">Change who I'm recording</button>
 				<!-- Class With Everything Related To The 3-Step Process -->
-				<div class="wizard">
+				<div id="record-wizard" class="wizard" style="display:none">
 					
 					<!-- Progress Bar -->
 					<div class="progress-container">
