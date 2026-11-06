@@ -397,6 +397,7 @@ async function checkLoginStatus() {
   });
   document.getElementById("tab4-btn").addEventListener("click", function() {
     openTab("tab4", this);
+    openCreateExampleTab();
     a_wireWizardOnce();
   });
   document.getElementById("tab5-btn").addEventListener("click", function() {
@@ -462,7 +463,7 @@ function bootDemo() {
   document.getElementById("tab3-btn").addEventListener("click", function() { openTab("tab3", this); });
   document.getElementById("subtabB-btn").addEventListener("click", function() { openNestedTab("subtabB", this, "tab2"); });
   document.getElementById("subtabC-btn").addEventListener("click", function() { openNestedTab("subtabC", this, "tab2"); });
-  document.getElementById("tab4-btn").addEventListener("click", function() { openTab("tab4", this); a_wireWizardOnce();});
+  document.getElementById("tab4-btn").addEventListener("click", function() { openTab("tab4", this); openCreateExampleTab(); a_wireWizardOnce();});
   document.getElementById("tab5-btn").addEventListener("click", function() { openTab("tab5", this); renderApprovalModeUI();});
   document.getElementById("tab6-btn").addEventListener("click", function() { openTab("tab6", this); fetchAndRenderRecordingApprovalExamplesTable();});
   document.getElementById("tab7-btn").addEventListener("click", function() { openTab("tab7", this); fetchAndRenderClassViewableExamplesTable();});
@@ -3609,3 +3610,145 @@ function applyRoleVisibility() {
   }
 
 }
+
+// ===== Creator consent (creators agree once before the Create Example wizard) =====
+const CREATOR_CONSENT_FORM_VERSION = 'placeholder-v1';
+const CREATOR_CONSENT_BOXES = [
+  { key: 'box1', label: '[PLACEHOLDER: creator consent box 1 text]' },
+  { key: 'box2', label: '[PLACEHOLDER: creator consent box 2 text]' },
+];
+const CREATOR_CONSENT_DECLINED_MESSAGE = 'Sorry, we cannot let you create without consent.';
+
+let creatorConsentConfirmedFor = null; // user id whose consent was confirmed this page load
+let creatorConsentCheckNumber = 0;     // only the latest check may change the screen
+let creatorConsentButtonsWired = false;
+let creatorConsentSaving = false;
+
+function setCreatorConsentView(showWizard, showConsentPage) {
+  document.getElementById('a-wizard').style.display = showWizard ? '' : 'none';
+  document.getElementById('creator-consent-page').style.display = showConsentPage ? '' : 'none';
+  // The message sits outside the page, so clear it once the wizard takes over.
+  if (showWizard) setCreatorConsentMessage('');
+}
+
+function setCreatorConsentMessage(text) {
+  document.getElementById('creator-consent-message').textContent = text;
+}
+
+function wireCreatorConsentButtonsOnce() {
+  if (creatorConsentButtonsWired) return;
+  creatorConsentButtonsWired = true;
+  document.getElementById('creator-consent-submit').addEventListener('click', submitCreatorConsent);
+  document.getElementById('creator-consent-decline').addEventListener('click', declineCreatorConsent);
+}
+
+// Fresh, unticked checkboxes with both buttons ready.
+function renderCreatorConsentForm() {
+  const boxesEl = document.getElementById('creator-consent-boxes');
+  boxesEl.replaceChildren();
+  for (const box of CREATOR_CONSENT_BOXES) {
+    const input = document.createElement('input');
+    input.type = 'checkbox';
+    input.checked = false;
+    input.setAttribute('data-key', box.key);
+    const label = document.createElement('label');
+    label.append(input, ' ' + box.label);
+    const row = document.createElement('div');
+    row.appendChild(label);
+    boxesEl.appendChild(row);
+  }
+  boxesEl.style.display = '';
+
+  const submitBtn = document.getElementById('creator-consent-submit');
+  const declineBtn = document.getElementById('creator-consent-decline');
+  submitBtn.style.display = '';
+  declineBtn.style.display = '';
+  submitBtn.disabled = false;
+  declineBtn.disabled = false;
+  setCreatorConsentMessage('');
+}
+
+async function openCreateExampleTab() {
+  wireCreatorConsentButtonsOnce();
+  const checkNumber = ++creatorConsentCheckNumber;
+
+  if (DEMO_MODE || currentRole === 'admin') {
+    setCreatorConsentView(true, false);
+    return;
+  }
+  if (creatorConsentConfirmedFor !== null && creatorConsentConfirmedFor === currentUserId) {
+    setCreatorConsentView(true, false);
+    return;
+  }
+
+  setCreatorConsentView(false, false);
+  setCreatorConsentMessage('');
+  const userId = currentUserId;
+  const { data, error } = await supabaseClient
+    .from('creator_consent')
+    .select('id')
+    .eq('user_id', userId)
+    .eq('form_version', CREATOR_CONSENT_FORM_VERSION)
+    .limit(1);
+
+  if (checkNumber !== creatorConsentCheckNumber) return;
+
+  if (error) {
+    console.error('creator consent check failed:', error);
+    setCreatorConsentView(false, false);
+    setCreatorConsentMessage('Could not check consent. Please try again.');
+    return;
+  }
+  if (data && data.length > 0) {
+    creatorConsentConfirmedFor = userId;
+    setCreatorConsentView(true, false);
+    return;
+  }
+  renderCreatorConsentForm();
+  setCreatorConsentView(false, true);
+}
+
+async function submitCreatorConsent() {
+  if (DEMO_MODE || creatorConsentSaving) return;
+
+  const inputs = document.getElementById('creator-consent-boxes').querySelectorAll('input[type="checkbox"]');
+  const answers = {};
+  for (const box of CREATOR_CONSENT_BOXES) {
+    const input = Array.from(inputs).find(i => i.getAttribute('data-key') === box.key);
+    if (!input || !input.checked) {
+      setCreatorConsentMessage('Please tick every box to give consent.');
+      return;
+    }
+    answers[box.key] = true;
+  }
+
+  const submitBtn = document.getElementById('creator-consent-submit');
+  creatorConsentSaving = true;
+  submitBtn.disabled = true;
+  setCreatorConsentMessage('Saving...');
+
+  const userId = currentUserId;
+  const row = { user_id: userId, form_version: CREATOR_CONSENT_FORM_VERSION, answers };
+  const { error } = await supabaseClient.from('creator_consent').insert(row);
+  creatorConsentSaving = false;
+
+  // 23505 means a consent row already exists, which counts as consented.
+  if (!error || error.code === '23505') {
+    creatorConsentCheckNumber++; // older in-flight checks must not re-show the form
+    creatorConsentConfirmedFor = userId;
+    setCreatorConsentView(true, false);
+    return;
+  }
+  console.error('creator consent save failed:', error);
+  setCreatorConsentMessage('Could not save your consent. Please try again.');
+  submitBtn.disabled = false;
+}
+
+function declineCreatorConsent() {
+  document.getElementById('creator-consent-boxes').style.display = 'none';
+  document.getElementById('creator-consent-submit').style.display = 'none';
+  document.getElementById('creator-consent-decline').style.display = 'none';
+  setCreatorConsentMessage(CREATOR_CONSENT_DECLINED_MESSAGE);
+  setCreatorConsentView(false, true);
+}
+// ===== End creator consent

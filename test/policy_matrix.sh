@@ -27,10 +27,13 @@ check () { # description expected actual
   else printf "  FAIL  %-52s expected %s, got %s\n" "$1" "$2" "$3"; fail=$((fail+1)); fi
 }
 
-for migration in 0009_admin_only_tagging.sql 0009_rollback.sql; do
+for migration in 0010_creator_consent.sql 0010_rollback.sql 0011_require_creator_consent.sql 0011_rollback.sql; do
   if [ -s "$(dirname "$0")/../db/$migration" ]; then present=yes; else present=no; fi
   check "migration delivered: $migration" yes "$present"
 done
+
+# Since 0011 a creator needs a consent row to create examples. Seeds one for D.
+CONSENT_D=$'reset role; insert into public.creator_consent(user_id,form_version,answers) values (\'00000000-0000-0000-0000-00000000000d\',\'placeholder-v1\',\'{"box1":true,"box2":true}\'); set local role authenticated;'
 
 echo "reads: how many rows each role can see"
 check "anon sees verified unheld examples"      3 "$(q anon "" 'select count(*) from public.example;')"
@@ -42,7 +45,7 @@ check "admin sees held audio"                   2 "$(q authenticated $E 'select 
 
 echo "writes: who may do what"
 check "recorder cannot create an example"      no "$(q authenticated $C $'select public._p($q$insert into public.example(width,height,title,"user") values (1,1,\'x\',\'x\')$q$);')"
-check "creator can create an example"         YES "$(q authenticated $D $'select public._p($q$insert into public.example(width,height,title,"user") values (1,1,\'x\',\'x\')$q$);')"
+check "creator can create an example"         YES "$(q authenticated $D "$CONSENT_D "$'select public._p($q$insert into public.example(width,height,title,"user") values (1,1,\'x\',\'x\')$q$);')"
 check "example defaults to unapproved" false "$(docker exec -i el-pg psql -U postgres -qtA -c "select column_default from information_schema.columns where table_schema='public' and table_name='example' and column_name='verification_status'")"
 check "recorder cannot approve"                no "$(q authenticated $C $'select public._p($q$update public.example set verification_status=true where id=\'e0000000-0000-0000-0000-000000000003\'$q$);')"
 check "creator cannot approve"                 no "$(q authenticated $D $'select public._p($q$update public.example set verification_status=true where id=\'e0000000-0000-0000-0000-000000000003\'$q$);')"
@@ -51,8 +54,8 @@ check "nobody can promote themselves"          no "$(q authenticated $C $'select
 check "anon cannot delete legacy audio_clips"  no "$(q anon "" $'select public._p($q$delete from public.audio_clips$q$);')"
 
 echo "the approval gate itself"
-check "creator cannot publish a pre-approved example"  no "$(q authenticated $D $'select public._p($q$insert into public.example(width,height,title,"user",verification_status) values (1,1,\'x\',\'x\',true)$q$);')"
-check "creator can create work awaiting approval"     YES "$(q authenticated $D $'select public._p($q$insert into public.example(width,height,title,"user",verification_status) values (1,1,\'x\',\'x\',false)$q$);')"
+check "creator cannot publish a pre-approved example"  no "$(q authenticated $D "$CONSENT_D "$'select public._p($q$insert into public.example(width,height,title,"user",verification_status) values (1,1,\'x\',\'x\',true)$q$);')"
+check "creator can create work awaiting approval"     YES "$(q authenticated $D "$CONSENT_D "$'select public._p($q$insert into public.example(width,height,title,"user",verification_status) values (1,1,\'x\',\'x\',false)$q$);')"
 check "creator cannot submit pre-verified session"     no "$(q authenticated $D $'select public._p($q$insert into public.recording_session(example_id,"user",language,verification_status) values (\'e0000000-0000-0000-0000-000000000001\',\'Cora\',\'L\',true)$q$);')"
 check "admin may publish directly"                    YES "$(q authenticated $E $'select public._p($q$insert into public.example(width,height,title,"user",verification_status) values (1,1,\'x\',\'x\',true)$q$);')"
 check "recorder submits, must stay unverified"  no "$(q authenticated $C $'select public._p($q$insert into public.recording_session(example_id,"user",language,verification_status) values (\'e0000000-0000-0000-0000-000000000001\',\'Rita\',\'L\',true)$q$);')"
@@ -86,8 +89,8 @@ check "same name in other case is refused"      no "$(q authenticated $E "$SEED 
 check "blank name is refused"                   no "$(q authenticated $E $'select public._p($q$insert into public.categories(category_type) values (\'   \')$q$);')"
 
 echo "example owners: a creator's new example is theirs"
-check "new example records its creator"         $D "$(q authenticated $D $'insert into public.example(id,width,height,title,"user",verification_status) values (\'e0000000-0000-0000-0000-0000000000aa\',1,1,\'x\',\'x\',false); reset role; select created_by from public.example where id=\'e0000000-0000-0000-0000-0000000000aa\';' | tail -1)"
-check "creator cannot make one owned by another" no "$(q authenticated $D "select public._p(\$q\$insert into public.example(width,height,title,\"user\",verification_status,created_by) values (1,1,'x','x',false,'$E')\$q\$);")"
+check "new example records its creator"         $D "$(q authenticated $D "$CONSENT_D "$'insert into public.example(id,width,height,title,"user",verification_status) values (\'e0000000-0000-0000-0000-0000000000aa\',1,1,\'x\',\'x\',false); reset role; select created_by from public.example where id=\'e0000000-0000-0000-0000-0000000000aa\';' | tail -1)"
+check "creator cannot make one owned by another" no "$(q authenticated $D "$CONSENT_D select public._p(\$q\$insert into public.example(width,height,title,\"user\",verification_status,created_by) values (1,1,'x','x',false,'$E')\$q\$);")"
 check "admin can still create examples"        YES "$(q authenticated $E $'select public._p($q$insert into public.example(width,height,title,"user") values (1,1,\'x\',\'x\')$q$);')"
 
 echo "tags: only admins may change tags"
@@ -119,6 +122,90 @@ for operation in "update public.categories_example set category_id = (select id 
 done
 check "anon sees published tags, not draft tags"   1 "$(q anon "" "$CATS insert into public.categories_example(category_id, example_id) select id, '$PUBLISHED'::uuid from public.categories where category_type = 'Verbs' union all select id, '$DRAFT'::uuid from public.categories where category_type = 'Verbs'; set local role anon; select count(*) from public.categories_example;")"
 check "deleting a category removes its tags"     1,0 "$(q authenticated $E "$CATS insert into public.categories_example(category_id, example_id) select id, '$PUBLISHED' from public.categories where category_type = 'Verbs'; create temp table n as select count(*) as before from public.categories_example; set local role authenticated; delete from public.categories where category_type = 'Verbs'; reset role; select (select before from n) || ',' || count(*) from public.categories_example;" | tail -1)"
+
+echo "creator consent: one agreed row per person per form version"
+CC=public.creator_consent
+V=placeholder-v1
+OK_ANSWERS='{"box1":true,"box2":true}'
+own () { echo "insert into $CC(form_version,answers) values ('$V','$OK_ANSWERS')"; }
+seed () { echo "reset role; insert into $CC(user_id,form_version,answers) values ('$1','$V','$OK_ANSWERS');"; }
+try () { echo "select public._p(\$q\$$1\$q\$);"; }
+column_default () { q postgres "" "select column_default from information_schema.columns where table_schema='public' and table_name='creator_consent' and column_name='$1';"; }
+check "creator_consent has RLS enabled" t "$(q postgres "" "select relrowsecurity from pg_class where oid='$CC'::regclass;")"
+check "creator_consent columns, types, not null" 5 "$(q postgres "" "select count(*) from information_schema.columns where table_schema='public' and table_name='creator_consent' and is_nullable='NO' and (column_name,data_type) in (('id','uuid'),('user_id','uuid'),('form_version','text'),('answers','jsonb'),('created_at','timestamp with time zone'));")"
+check "creator_consent has exactly 5 columns" 5 "$(q postgres "" "select count(*) from information_schema.columns where table_schema='public' and table_name='creator_consent';")"
+check "creator_consent id is the primary key" 1 "$(q postgres "" "select count(*) from pg_constraint where conrelid='$CC'::regclass and contype='p' and conkey=array[(select attnum from pg_attribute where attrelid='$CC'::regclass and attname='id')];")"
+check "creator_consent id defaults to random uuid" gen_random_uuid\(\) "$(column_default id)"
+check "creator_consent user_id defaults to auth.uid()" auth.uid\(\) "$(column_default user_id)"
+check "creator_consent created_at defaults to now()" now\(\) "$(column_default created_at)"
+check "creator_consent user_id references profiles, no cascade" 1 "$(q postgres "" "select count(*) from pg_constraint where conrelid='$CC'::regclass and confrelid='public.profiles'::regclass and contype='f' and confdeltype in ('a','r') and conkey=array[(select attnum from pg_attribute where attrelid='$CC'::regclass and attname='user_id')];")"
+check "creator_consent unique (user_id, form_version)" 1 "$(q postgres "" "select count(*) from pg_constraint where conrelid='$CC'::regclass and contype='u' and (select array_agg(attname::text order by attname) from pg_attribute where attrelid='$CC'::regclass and attnum = any(conkey)) = array['form_version','user_id'];")"
+check "defaults fill user, id and timestamp" t "$(q authenticated $D "$(own); reset role; select user_id='$D'::uuid and id is not null and created_at=now() from $CC;" | tail -1)"
+check "same person, same version twice is refused" no "$(q authenticated $D "$(own); $(try "$(own)")" | tail -1)"
+check "same person, another version is allowed" YES "$(q authenticated $D "$(own); $(try "insert into $CC(form_version,answers) values ('v2','$OK_ANSWERS')")" | tail -1)"
+check "two people, same version is allowed" YES "$(q authenticated $D "$(seed $A) set local role authenticated; $(try "$(own)")" | tail -1)"
+
+for answers in '{"box1":true,"box2":false}' '{"box1":false}' '{}' '[true]' '[]' 'true' '{"box1":"true"}' '{"box1":1}' '{"box1":null}' '{"box1":[true]}' '{"box1":[]}'; do
+  check "answers refused: $answers" no "$(q authenticated $D "$(try "insert into $CC(form_version,answers) values ('$V','$answers')")")"
+done
+check "answers refused: null" no "$(q authenticated $D "$(try "insert into $CC(form_version,answers) values ('$V',null)")")"
+check "answers accepted: one true box" YES "$(q authenticated $D "$(try "insert into $CC(form_version,answers) values ('$V','{\"box1\":true}')")")"
+for version in "''" "'   '" "repeat('x',51)" "null"; do
+  check "form_version refused: $version" no "$(q authenticated $D "$(try "insert into $CC(form_version,answers) values ($version,'$OK_ANSWERS')")")"
+done
+for version in "'x'" "repeat('x',50)" "'  ' || repeat('x',50) || '  '"; do
+  check "form_version accepted: $version" YES "$(q authenticated $D "$(try "insert into $CC(form_version,answers) values ($version,'$OK_ANSWERS')")")"
+done
+
+for uid in "$A" "$B" "$C" "$D" "$E"; do
+  other=$A; [ "$uid" = "$A" ] && other=$B
+  check "$uid inserts own consent" YES "$(q authenticated "$uid" "$(try "$(own)")")"
+  check "$uid inserts own consent with own user_id" YES "$(q authenticated "$uid" "$(try "insert into $CC(user_id,form_version,answers) values ('$uid','$V','$OK_ANSWERS')")")"
+  check "$uid cannot consent for another person" no "$(q authenticated "$uid" "$(try "insert into $CC(user_id,form_version,answers) values ('$other','$V','$OK_ANSWERS')")")"
+  check "$uid cannot set id" no "$(q authenticated "$uid" "$(try "insert into $CC(id,form_version,answers) values (gen_random_uuid(),'$V','$OK_ANSWERS')")")"
+  check "$uid cannot set created_at" no "$(q authenticated "$uid" "$(try "insert into $CC(created_at,form_version,answers) values ('2000-01-01','$V','$OK_ANSWERS')")")"
+  check "$uid reads own consent" 1 "$(q authenticated "$uid" "$(seed "$uid") set local role authenticated; select count(*) from $CC where user_id='$uid';" | tail -1)"
+  for operation in "update $CC set form_version='changed'" "delete from $CC"; do
+    check "$uid cannot ${operation%% *} consent" no "$(q authenticated "$uid" "$(seed "$uid") $(seed "$other") set local role authenticated; $(try "$operation")" | tail -1)"
+  done
+done
+for uid in "$A" "$B" "$C" "$D"; do
+  check "$uid cannot read another's consent" 0 "$(q authenticated "$uid" "$(seed $E) set local role authenticated; select count(*) from $CC;" | tail -1)"
+done
+check "admin reads everyone's consent" 2 "$(q authenticated $E "$(seed $A) $(seed $D) set local role authenticated; select count(*) from $CC;" | tail -1)"
+check "anon cannot insert consent" no "$(q anon "" "$(try "insert into $CC(user_id,form_version,answers) values ('$A','$V','$OK_ANSWERS')")")"
+check "anon cannot read consent" no "$(q anon "" "$(seed $A) set local role anon; $(try "select 1 from $CC")" | tail -1)"
+for operation in "update $CC set form_version='changed'" "delete from $CC"; do
+  check "anon cannot ${operation%% *} consent" no "$(q anon "" "$(seed $A) set local role anon; $(try "$operation")" | tail -1)"
+done
+
+FN="'public.has_creator_consent(uuid)'::regprocedure"
+check "has_creator_consent is stable security definer" true,s "$(q postgres "" "select prosecdef::text || ',' || provolatile::text from pg_proc where oid=$FN;")"
+check "has_creator_consent pins search_path to public" t "$(q postgres "" "select 'search_path=public' = any(proconfig) from pg_proc where oid=$FN;")"
+check "has_creator_consent returns boolean" boolean "$(q postgres "" "select prorettype::regtype from pg_proc where oid=$FN;")"
+check "anon cannot execute has_creator_consent" f "$(q postgres "" "select has_function_privilege('anon',$FN,'execute');")"
+check "authenticated can execute has_creator_consent" t "$(q postgres "" "select has_function_privilege('authenticated',$FN,'execute');")"
+check "PUBLIC has no execute on has_creator_consent" t "$(q postgres "" "select proacl is not null and not exists (select 1 from aclexplode(proacl) where grantee=0) from pg_proc where oid=$FN;")"
+check "has_creator_consent false without a row" f "$(q authenticated $D "select public.has_creator_consent('$D');")"
+check "has_creator_consent true with a row" t "$(q authenticated $D "$(seed $D) set local role authenticated; select public.has_creator_consent('$D');" | tail -1)"
+check "has_creator_consent true for any version" t "$(q authenticated $D "reset role; insert into $CC(user_id,form_version,answers) values ('$D','other-v9','$OK_ANSWERS'); set local role authenticated; select public.has_creator_consent('$D');" | tail -1)"
+# Nobody may probe another person's consent, except an admin.
+for uid in "$A" "$B" "$C"; do
+  check "$uid probing D's consent gets false" f "$(q authenticated "$uid" "$(seed $D) set local role authenticated; select public.has_creator_consent('$D');" | tail -1)"
+done
+check "D asking about own consent gets true" t "$(q authenticated $D "$(seed $D) set local role authenticated; select public.has_creator_consent('$D');" | tail -1)"
+check "admin asking about D's consent gets true" t "$(q authenticated $E "$(seed $D) set local role authenticated; select public.has_creator_consent('$D');" | tail -1)"
+
+echo "creator consent: creating examples needs consent"
+NEW_EXAMPLE=$'insert into public.example(width,height,title,"user",verification_status) values (1,1,\'x\',\'x\',false)'
+check "creator without consent cannot create an example" no "$(q authenticated $D "$(try "$NEW_EXAMPLE")")"
+check "creator with consent can create an example"     YES "$(q authenticated $D "$CONSENT_D $(try "$NEW_EXAMPLE")" | tail -1)"
+check "another person's consent does not help a creator" no "$(q authenticated $D "$(seed $A) set local role authenticated; $(try "$NEW_EXAMPLE")" | tail -1)"
+PUBLISHED_EXAMPLE=$'insert into public.example(width,height,title,"user",verification_status) values (1,1,\'x\',\'x\',true)'
+check "consented creator still cannot publish directly" no "$(q authenticated $D "$CONSENT_D $(try "$PUBLISHED_EXAMPLE")" | tail -1)"
+check "consented creator still cannot set another owner" no "$(q authenticated $D "$CONSENT_D $(try "insert into public.example(width,height,title,\"user\",verification_status,created_by) values (1,1,'x','x',false,'$E')")" | tail -1)"
+check "admin without consent can create an example"    YES "$(q authenticated $E "$(try "$NEW_EXAMPLE")")"
+check "recorder with consent still cannot create one"   no "$(q authenticated $C "$(seed $C) set local role authenticated; $(try "$NEW_EXAMPLE")" | tail -1)"
 
 echo
 if [ $fail -eq 0 ]; then echo "all checks passed"; else echo "$fail check(s) failed"; fi
