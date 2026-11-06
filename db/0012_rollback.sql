@@ -9,5 +9,6 @@ drop function if exists public.owns_example(uuid);
 drop function if exists public.has_session_consent(uuid);
 drop function if exists public.has_recording_consent(uuid);
 drop table if exists public.recording_consent;
+drop function if exists public.recording_session_exists(uuid);
 
 commit;

@@ -36,8 +36,29 @@ alter table public.recording_consent enable row level security;
 create policy recording_consent_select on public.recording_consent for select to authenticated
   using (user_id = auth.uid() or public.is_admin(auth.uid()));
 
+-- True if a recording session with this id exists. Lets the insert rule
+-- refuse consent rows that link to a session saved earlier.
+create or replace function public.recording_session_exists(p_session uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select exists (select 1 from public.recording_session where id = p_session);
+$$;
+
+revoke all on function public.recording_session_exists(uuid) from public, anon;
+grant execute on function public.recording_session_exists(uuid) to authenticated;
+
+-- The rpc inserts the consent row before its session, so a new link passes.
 create policy recording_consent_insert on public.recording_consent for insert to authenticated
-  with check (user_id = auth.uid());
+  with check (
+    user_id = auth.uid()
+    and ( public.is_admin(auth.uid()) or public.user_role() in ('recorder', 'creator') )
+    and ( recording_session_id is null
+          or not public.recording_session_exists(recording_session_id) )
+  );
 
 -- No update or delete for anyone. Clients cannot set id or created_at.
 revoke all on public.recording_consent from anon, authenticated;

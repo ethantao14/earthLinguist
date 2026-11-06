@@ -3762,6 +3762,7 @@ const RECORDING_CONSENT_BOXES = [
 const RECORDING_CONSENT_DECLINED_MESSAGE = 'Sorry, we cannot let you record without consent.';
 const RECORDING_CONSENT_MISSING_MESSAGE =
   'Consent for the person being recorded is missing. Please choose who you are recording again.';
+const RECORDING_MODE_MISSING_MESSAGE = 'Please choose who you are recording first.';
 
 let recordingMode = null;          // null, 'self' or 'other'
 let recordingModeFor = null;       // user id that chose the current mode
@@ -3991,6 +3992,9 @@ async function insertRecordingSession(row) {
     });
     return { error: error || null };
   }
+  if (recordingMode === null && currentRole !== 'admin') {
+    return { error: { message: RECORDING_MODE_MISSING_MESSAGE } };
+  }
   const { error } = await supabaseClient.from('recording_session').insert([row]);
   return { error: error || null };
 }
@@ -3998,7 +4002,7 @@ async function insertRecordingSession(row) {
 // A someone-else consent covers one session, so the next recording asks again.
 function finishRecordingSubmission() {
   if (recordingMode !== 'other') return;
-  setRecordingMode(null);
-  pendingOtherConsent = null;
+  resetRecordingChoice();
+  setRecordingView('mode');
 }
 // ===== End recording consent
